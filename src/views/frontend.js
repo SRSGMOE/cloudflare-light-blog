@@ -62,7 +62,7 @@ export function getFrontendHTML(settings, requestUrl) {
       --btn-shadow: ${currentTheme.btnShadow};
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: ${currentTheme.fontFamily}; background: var(--body-bg); color: var(--text-body); }
+    body { font-family: ${currentTheme.fontFamily}; background: var(--body-bg); color: var(--text-body); overflow-x: hidden; }
     button, input, select, textarea { font-family: inherit; }
     header { background: var(--header-bg); color: #fff; padding: 40px 20px; text-align: center; position: relative; overflow: hidden; }
     header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px; background: linear-gradient(transparent, rgba(0,0,0,0.05)); }
@@ -72,16 +72,16 @@ export function getFrontendHTML(settings, requestUrl) {
     main { max-width: 1400px; margin: 30px auto; padding: 0 20px; display: flex; gap: 24px; align-items: flex-start; justify-content: center; }
     .sidebar { width: 280px; flex-shrink: 0; }
     .sidebar-right { width: 280px; flex-shrink: 0; }
-    .post-list { width: 792px; flex-shrink: 0; }
+    .post-list { width: 792px; flex-shrink: 0; min-width: 0; }
     #app { display: flex; flex-direction: column; gap: 28px; }
-    .post-card { background: var(--card-bg); border-radius: 20px; overflow: visible; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); display: flex; flex-direction: row; transition: all 0.3s ease; border: 2px solid var(--card-border); }
+    .post-card { background: var(--card-bg); border-radius: 20px; overflow: visible; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); display: flex; flex-direction: row; transition: all 0.3s ease; border: 2px solid var(--card-border); word-break: break-word; }
     .post-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(114, 93, 66, 0.15); }
     .post-card .post-cover { width: 220px; flex-shrink: 0; background: var(--card-border); display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 18px 0 0 18px; }
     .post-card .post-cover img { width: 100%; height: 100%; object-fit: cover; }
     .post-card .post-content { flex: 1; padding: 20px; display: flex; flex-direction: column; justify-content: space-between; min-width: 0; overflow: hidden; }
     .post-card h2 { font-size: 1.35em; margin-bottom: 8px; color: var(--text-primary); font-weight: 700; }
     .post-card h2 a { color: var(--text-primary); text-decoration: none; }
-    .post-card .meta { display: flex; flex-wrap: nowrap; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 0.8em; margin-top: 12px; font-weight: 600; }
+    .post-card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; color: var(--text-secondary); font-size: 0.8em; margin-top: 12px; font-weight: 600; }
     .post-card a.read-more { display: inline-block; padding: 6px 16px; background: var(--btn-bg); color: #fff; text-decoration: none; border-radius: 50px; font-size: 0.8em; font-weight: 600; box-shadow: 0 3px 0 0 var(--btn-shadow); transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1); white-space: nowrap; }
     .post-card a.read-more:hover { transform: translateY(-1px); box-shadow: 0 5px 0 0 var(--btn-shadow); }
     .post-card a.read-more:active { transform: translateY(2px); box-shadow: 0 1px 0 0 var(--btn-shadow); }
@@ -119,13 +119,12 @@ export function getFrontendHTML(settings, requestUrl) {
       header p { font-size: 0.85em; }
       .mobile-nav-toggle { display: flex; align-items: center; justify-content: center; }
       main { flex-direction: row; padding: 0 12px; gap: 0; margin-top: 12px; position: relative; }
-      .sidebar { width: 260px; position: fixed; top: 0; left: -260px; height: 100vh; z-index: 1002; transition: left 0.3s ease; overflow-y: auto; background: var(--body-bg); padding: 16px; box-shadow: 2px 0 8px rgba(0,0,0,0.1); }
-      .sidebar.open { left: 0; }
+      .sidebar, .sidebar-right { width: 260px; position: fixed; top: 0; left: -260px; height: 100vh; z-index: 1002; transition: left 0.3s ease; overflow-y: auto; background: var(--body-bg); padding: 16px; box-shadow: 2px 0 8px rgba(0,0,0,0.1); display: block; }
+      .sidebar.open, .sidebar-right.open { left: 0; }
       .profile-card { border-radius: 16px; padding: 16px; }
       .profile-card .avatar { width: 120px; height: 120px; }
       .profile-card .name { font-size: 1em; }
-      .post-list { width: 100%; }
-      .sidebar-right { display: none; }
+      .post-list { width: 100%; min-width: 0; flex-shrink: 1; }
       #app { gap: 20px; }
       .post-card { flex-direction: column; border-radius: 16px; }
       .post-card .post-cover { display: none; }
@@ -133,6 +132,7 @@ export function getFrontendHTML(settings, requestUrl) {
       .post-card h2 { font-size: 1em; }
       .post-card .meta { font-size: 0.75em; }
       footer { padding: 20px 16px; font-size: 0.8em; }
+      .back-to-top { bottom: 20px; right: 20px; width: 40px; height: 40px; font-size: 18px; }
     }
     .tag-item:hover {
       transform: translateY(-2px);
@@ -253,9 +253,12 @@ export function getFrontendHTML(settings, requestUrl) {
 
     // 移动端导航
     function toggleNav() {
-      document.querySelector('.sidebar').classList.toggle('open');
-      document.getElementById('mobileOverlay').classList.toggle('show');
-      document.querySelector('.mobile-nav-toggle').classList.toggle('nav-open');
+      var sidebar = document.querySelector('.sidebar') || document.querySelector('.sidebar-right');
+      if (sidebar) sidebar.classList.toggle('open');
+      var overlay = document.getElementById('mobileOverlay');
+      if (overlay) overlay.classList.toggle('show');
+      var btn = document.querySelector('.mobile-nav-toggle');
+      if (btn) btn.classList.toggle('nav-open');
     }
 
     // 加载侧边栏数据
