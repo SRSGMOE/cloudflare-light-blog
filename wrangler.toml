@@ -9,6 +9,9 @@ compatibility_flags = ["nodejs_compat"]
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# 让 Worker 为静态资源补充长期缓存头；否则 Static Assets 默认返回
+# max-age=0，浏览器和边缘节点会反复重新验证 vendor/icon 文件。
+run_worker_first = ["/vendor/*", "/icon/*", "/favicon.ico"]
 
 # ============================================
 # D1 数据库绑定（变量名必须为 DB）
