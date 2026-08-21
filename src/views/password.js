@@ -11,7 +11,7 @@ export function getPasswordHTML(post) {
   <meta name="robots" content="noindex, nofollow">
   <title>输入密码 - 文章受保护</title>
   <style>
-    body { font-family: Nunito, 'Noto Sans SC', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    body { font-family: ui-rounded, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
     .box { background: #f7f3df; padding: 48px; border-radius: 20px; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); text-align: center; border: 2px solid #e8e0cc; max-width: 400px; width: 90%; }
     h2 { margin-bottom: 16px; color: #794f27; font-weight: 700; }
     input { padding: 12px 18px; width: 100%; border: 2.5px solid #c4b89e; border-radius: 50px; font-size: 15px; margin-bottom: 16px; background: #f8f8f0; color: #725d42; font-weight: 500; outline: none; transition: all 0.25s; box-shadow: 0 3px 0 0 #d4c9b4; box-sizing: border-box; }

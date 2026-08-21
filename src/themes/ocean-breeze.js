@@ -1,8 +1,8 @@
 // 蔚蓝主题 - 清新海洋风格
 export default {
   name: '蔚蓝',
-  fontFamily: "Nunito, 'Noto Sans SC', sans-serif",
-  fontUrl: 'https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700&display=swap',
+  fontFamily: "ui-rounded, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  fontUrl: '',
   headerBg: 'linear-gradient(135deg, #4ECDC4, #2C9C93)',
   sidebarBg: '#4ECDC4',
   btnBg: '#4ECDC4',

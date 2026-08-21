@@ -1,8 +1,8 @@
 // 动森主题 - 温馨自然风格
 export default {
   name: '动森',
-  fontFamily: "Nunito, 'LXGW WenKai', sans-serif",
-  fontUrl: 'https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=LXGW+WenKai&display=swap',
+  fontFamily: "ui-rounded, 'PingFang SC', 'Microsoft YaHei', sans-serif",
+  fontUrl: '',
   headerBg: 'linear-gradient(135deg, #7DC395, #5BAF7A)',
   sidebarBg: '#8ac68a',
   btnBg: '#19c8b9',

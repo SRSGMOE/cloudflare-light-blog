@@ -1,42 +1,39 @@
 // ==================== Cloudflare Light Blog - 主入口 ====================
 // 模块化架构 | HMAC 认证 | 分页 | 缓存 | SEO
 
-import { html, json, errorResponse, handleOptions, getCorsHeaders, escapeHtml, deriveHMACKey } from './lib/utils.js';
-import { initDB, getSettings } from './lib/db.js';
+import { html, json, errorResponse, handleOptions, getCorsHeaders, escapeHtml, deriveHMACKey, withAssetCache } from './lib/utils.js';
+import { getSettings } from './lib/db.js';
 import { authenticateRequest, verifyPasswordHash } from './lib/auth.js';
 import { handleImage } from './lib/image.js';
-import { withCache } from './lib/cache.js';
+import { getPublicApiCacheTTL, purgePublicCache, withCache } from './lib/cache.js';
 import { handleAPI } from './api.js';
 import { getFrontendHTML } from './views/frontend.js';
 import { getPostHTML } from './views/post.js';
 import { getPasswordHTML } from './views/password.js';
 import { getAdminHTML } from './views/admin.js';
 
-// 数据库初始化状态缓存
-let dbInitPromise = null;
-
-function ensureDB(env) {
-  if (!dbInitPromise) {
-    dbInitPromise = initDB(env).catch(e => {
-      dbInitPromise = null; // 失败时重置，允许重试
-      throw e;
-    });
-  }
-  return dbInitPromise;
-}
-
 export default {
   async fetch(request, env, ctx) {
-    // 初始化数据库并获取设置
-    await ensureDB(env);
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // 公共静态资源不需要读取 D1，也不受全站密码页面影响。
+    if (path === '/favicon.ico' || path.startsWith('/icon/')) {
+      try {
+        return path === '/favicon.ico'
+          ? await handleFavicon(request, env)
+          : await handleIcon(request, env, path);
+      } catch (e) {
+        return errorResponse('静态资源加载失败', 500, e);
+      }
+    }
+
+    // 数据库结构通过 migrations/ 管理，避免每个冷实例在请求中执行初始化写操作。
     const siteSettings = await getSettings(env);
 
     // 处理 CORS 预检请求
     const optionsResponse = handleOptions(request, siteSettings.allowed_origins || '*');
     if (optionsResponse) return optionsResponse;
-
-    const url = new URL(request.url);
-    const path = url.pathname;
 
     try {
       // 全站密码保护检查
@@ -75,16 +72,23 @@ export default {
         return handleRobots(request, env);
       }
 
-      // favicon.ico（从静态资源读取，兄弟路径为 /icon/favicon.ico）
-      if (path === '/favicon.ico') {
-        return handleFavicon(request, env);
-      }
-
       // API 路由（统一附加 CORS 头）
       if (path.startsWith('/api/')) {
-        const resp = await handleAPI(request, env, path);
+        const cacheTtl = getPublicApiCacheTTL(path, request.method);
+        const resp = cacheTtl
+          ? await withCache(
+            request,
+            () => handleAPI(request, env, path),
+            cacheTtl,
+            ctx,
+            { cacheQuery: true }
+          )
+          : await handleAPI(request, env, path);
         const cors = getCorsHeaders(request, siteSettings.allowed_origins || '*');
         Object.entries(cors).forEach(([k, v]) => resp.headers.set(k, v));
+        if (resp.ok && request.method !== 'GET' && path !== '/api/login' && !path.endsWith('-auth')) {
+          ctx.waitUntil(purgePublicCache(url.origin));
+        }
         return resp;
       }
 
@@ -96,11 +100,6 @@ export default {
       // R2 图片
       if (path.startsWith('/images/')) {
         return handleImage(request, env, path);
-      }
-
-      // Icon 图标
-      if (path.startsWith('/icon/')) {
-        return handleIcon(request, env, path);
       }
 
       // 文章详情页
@@ -127,7 +126,7 @@ async function handleFrontendPage(request, env, ctx) {
   return withCache(request, async () => {
     const settings = await getSettings(env);
     return html(getFrontendHTML(settings, request.url));
-  }, 300); // 缓存 5 分钟
+  }, 300, ctx); // 缓存 5 分钟
 }
 
 
@@ -179,9 +178,8 @@ function showSitePasswordPage(settings) {
   <meta name="robots" content="noindex, nofollow">
   <title>访问验证 - ${escapeHtml(siteName)}</title>
   <link rel="icon" href="/icon/favicon.ico">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: Nunito, 'Noto Sans SC', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    body { font-family: ui-rounded, 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
     .box { background: #f7f3df; padding: 48px; border-radius: 20px; box-shadow: 0 4px 10px rgba(107,92,67,0.42); text-align: center; border: 2px solid #e8e0cc; max-width: 400px; width: 90%; }
     h2 { margin-bottom: 8px; color: #794f27; font-weight: 700; font-size: 1.4em; }
     p { color: #9f927d; margin-bottom: 24px; font-size: 0.9em; }
@@ -263,7 +261,7 @@ async function handleFavicon(request, env) {
 
   const response = await env.ASSETS.fetch(new URL('/icon/favicon.ico', request.url));
   if (response && response.status !== 404) {
-    return response;
+    return withAssetCache(response);
   }
 
   return new Response(null, { status: 204 });
@@ -283,7 +281,7 @@ async function handleIcon(request, env, path) {
     return new Response('Not Found', { status: 404 });
   }
 
-  return response;
+  return withAssetCache(response);
 }
 
 /**

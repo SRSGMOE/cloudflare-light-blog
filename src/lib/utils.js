@@ -26,6 +26,19 @@ export function html(content, status = 200) {
 }
 
 /**
+ * 为静态资源补充浏览器缓存头
+ */
+export function withAssetCache(response) {
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
+}
+
+/**
  * 错误响应（不暴露内部错误信息）
  */
 export function errorResponse(message, status = 500, logError = null) {

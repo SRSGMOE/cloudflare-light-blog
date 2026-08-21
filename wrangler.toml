@@ -18,6 +18,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "blog-db"
+migrations_dir = "migrations"
 
 # ============================================
 # R2 存储绑定（可选，如需图片上传功能）

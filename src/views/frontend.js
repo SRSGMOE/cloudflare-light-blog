@@ -45,9 +45,7 @@ export function getFrontendHTML(settings, requestUrl) {
   <meta name="twitter:title" content="${escapeHtml(siteName)}">
   <meta name="twitter:description" content="${escapeHtml(siteDesc || siteName + ' - 基于 Cloudflare Workers 构建的轻量级博客')}">
   <script type="application/ld+json">${homepageJsonLd}</script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="${currentTheme.fontUrl}" rel="stylesheet">
+  ${currentTheme.fontUrl ? `<link href="${currentTheme.fontUrl}" rel="stylesheet">` : ''}
   ${iconfontTag}
   <style>
     :root {
@@ -262,18 +260,28 @@ export function getFrontendHTML(settings, requestUrl) {
     }
 
     // 加载侧边栏数据
-    fetch('/api/stats').then(function(r){return r.json()}).then(function(s){
+    var homeDataPromise = fetch('/api/home-data').then(function(r){
+      if (!r.ok) throw new Error('首页数据加载失败');
+      return r.json();
+    }).catch(function(e){
+      console.error(e);
+      return {stats:{},categories:[],links:[],tags:[]};
+    });
+    homeDataPromise.then(function(data){
+      var s = data.stats || {};
       document.getElementById('stat-posts').textContent = s.postCount;
       document.getElementById('stat-cats').textContent = s.catCount;
       document.getElementById('stat-tags').textContent = s.tagCount || 0;
     });
-    fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
+    homeDataPromise.then(function(data){
+      var cats = data.categories || [];
       var list = document.getElementById('category-list');
       if(cats && cats.length > 0) {
         list.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
       }
     });
-    fetch('/api/links').then(function(r){return r.json()}).then(function(links){
+    homeDataPromise.then(function(data){
+      var links = data.links || [];
       var list = document.getElementById('link-list');
       if(links && links.length > 0) {
         list.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
@@ -283,7 +291,8 @@ export function getFrontendHTML(settings, requestUrl) {
     // 加载标签云（使用服务端聚合接口，避免请求全部文章）
     var tagCloudEl = document.getElementById('tag-cloud-left') || document.getElementById('tag-cloud-right');
     if (tagCloudEl) {
-      fetch('/api/tags').then(function(r){return r.json()}).then(function(tags) {
+      homeDataPromise.then(function(data) {
+        var tags = data.tags || [];
         tags = tags || [];
         if (tags.length > 0) {
           var colors = [
@@ -353,7 +362,8 @@ export function getFrontendHTML(settings, requestUrl) {
 
         if (currentCategory) {
           html += '<div style="margin-bottom:16px"><a href="/" style="display:inline-block;padding:8px 20px;background:' + themeColors.btnBg + ';color:#fff;text-decoration:none;border-radius:50px;font-weight:600;font-size:0.9em;box-shadow:0 4px 0 0 ' + themeColors.btnShadow + '">← 返回首页</a> <span id="current-cat" style="color:' + themeColors.textPrimary + ';font-weight:600;margin-left:8px"></span></div>';
-          fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
+            homeDataPromise.then(function(data){
+              var cats = data.categories || [];
             var cat = cats.find(function(c){return c.slug === currentCategory});
             var el = document.getElementById('current-cat');
             if(el && cat) el.textContent = '当前分类：' + cat.name;

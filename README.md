@@ -144,12 +144,13 @@
 
 ### 性能
 - ✅ 数据库索引（status、created_at、slug、category）
-- ✅ API 缓存（文章列表 60s、分类 300s、统计 60s、标签 60s、RSS 300s、Sitemap 300s）
+- ✅ API 缓存（公开 GET 接口使用 Workers Cache；文章列表 60s、分类 300s、统计 60s、标签 60s）
 - ✅ Settings 内存缓存（60 秒 TTL，避免每次请求查库）
 - ✅ 标签云服务端聚合（`/api/tags`，减少前端请求量）
 - ✅ 前台页面缓存（Cache API，首页 5min）
 - ✅ R2 图片缓存（1年）
-- ✅ 冷启动优化（Promise 缓存避免重复初始化）
+- ✅ 冷启动优化（设置读取 Promise 缓存避免并发重复查询）
+- ✅ D1 迁移初始化（请求链路不再执行建表和默认数据写入）
 - ✅ 压缩支持（后台可开关，Cloudflare 自动处理）
 
 ## 技术栈
@@ -306,7 +307,7 @@ git push -u origin main
 
 ### 3. 配置 D1 数据库绑定
 
-`wrangler.toml` 已配置 D1 绑定，Cloudflare 会根据 `database_name` 自动查找对应数据库，无需手动绑定。
+`wrangler.toml` 已配置 D1 绑定和 `migrations` 目录，Cloudflare 会根据 `database_name` 自动查找对应数据库，无需手动绑定。
 
 如果部署时报错 `database not found`，说明你的账户下还没有 `blog-db` 数据库，需要先创建：
 
@@ -314,6 +315,14 @@ git push -u origin main
 2. 进入 **Workers & Pages** → **D1**
 3. 点击 **Create database**，名称输入 `blog-db`
 4. 重新部署即可
+
+首次部署或新建数据库后，在项目目录执行一次远程迁移：
+
+```bash
+npx wrangler d1 migrations apply blog-db --remote
+```
+
+已有数据库无需删除数据；迁移使用幂等建表和索引语句。
 
 ### 4. 创建 R2 存储桶（可选）
 
@@ -431,6 +440,7 @@ git push
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| GET | `/api/home-data` | 首页侧栏聚合数据（统计、分类、友链、标签） |
 | GET | `/api/posts?page=1&limit=10&category=slug` | 文章列表（分页） |
 | GET | `/api/post/?slug=xxx` | 文章详情 |
 | GET | `/api/categories` | 分类列表 |

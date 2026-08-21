@@ -5,6 +5,7 @@ import { generateToken, authenticateRequest, hashPassword, verifyPasswordHash } 
 import { getSettings, saveSettings } from './lib/db.js';
 import { handleUpload } from './lib/image.js';
 import { purgeCache } from './lib/cache.js';
+import { buildTagData, getHomeData, parseLinksData } from './lib/public-data.js';
 
 // ==================== 常量 ====================
 const RATE_MAX_5 = 5;                    // 最大尝试次数
@@ -181,6 +182,9 @@ export async function handleAPI(request, env, path) {
     }
 
     // ========== 公开 API（不需要认证）==========
+    if (path === '/api/home-data' && method === 'GET') {
+      return getHomeData(env);
+    }
     if (path === '/api/posts' && method === 'GET') {
       return handleGetPosts(request, env);
     }
@@ -292,16 +296,17 @@ async function handleGetPosts(request, env) {
     params.push(catName);
   }
 
-  // 获取总数
-  const countResult = await env.DB.prepare(
-    `SELECT COUNT(*) as total FROM posts ${where}`
-  ).bind(...params).first();
-  const total = countResult?.total || 0;
+  const [countResult, postsResult, pinnedResult] = await env.DB.batch([
+    env.DB.prepare(`SELECT COUNT(*) as total FROM posts ${where}`).bind(...params),
+    env.DB.prepare(
+      `SELECT id, title, slug, excerpt, cover_image, category, tags, view_count, created_at, password FROM posts ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(...params, limit, offset),
+    env.DB.prepare("SELECT value FROM settings WHERE key='pinned_post_id'")
+  ]);
+  const total = countResult.results?.[0]?.total || 0;
 
   // 获取分页数据（密码哈希不对外返回，受保护文章的摘要也不对外泄露）
-  const { results } = await env.DB.prepare(
-    `SELECT id, title, slug, excerpt, cover_image, category, tags, view_count, created_at, password FROM posts ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
-  ).bind(...params, limit, offset).all();
+  const results = postsResult.results || [];
   const data = (results || []).map(p => {
     const { password, ...rest } = p;
     if (password) rest.excerpt = '';
@@ -309,11 +314,7 @@ async function handleGetPosts(request, env) {
     return rest;
   });
 
-  // 获取置顶文章 ID
-  const pinnedSetting = await env.DB.prepare(
-    "SELECT value FROM settings WHERE key='pinned_post_id'"
-  ).first();
-  const pinned_post_id = pinnedSetting?.value || '';
+  const pinned_post_id = pinnedResult.results?.[0]?.value || '';
 
   const resp = json({
     data,
@@ -394,26 +395,19 @@ async function handleProxyCss(request) {
  * 获取统计信息
  */
 async function handleGetStats(env) {
-  const [postCount, catCount, tagCount, latestPost] = await Promise.all([
-    env.DB.prepare("SELECT COUNT(*) as cnt FROM posts WHERE status='published'").first(),
-    env.DB.prepare("SELECT COUNT(*) as cnt FROM categories").first(),
-    env.DB.prepare("SELECT tags FROM posts WHERE status='published' AND tags IS NOT NULL AND tags != ''").all(),
-    env.DB.prepare("SELECT created_at FROM posts WHERE status='published' ORDER BY created_at DESC LIMIT 1").first()
+  const [postCount, catCount, tagRows, latestPost] = await env.DB.batch([
+    env.DB.prepare("SELECT COUNT(*) as cnt FROM posts WHERE status='published'"),
+    env.DB.prepare("SELECT COUNT(*) as cnt FROM categories"),
+    env.DB.prepare("SELECT tags FROM posts WHERE status='published' AND tags IS NOT NULL AND tags != ''"),
+    env.DB.prepare("SELECT created_at FROM posts WHERE status='published' ORDER BY created_at DESC LIMIT 1")
   ]);
-
-  // 统计去重标签数
-  const tagSet = new Set();
-  if (tagCount.results) {
-    tagCount.results.forEach(r => {
-      if (r.tags) r.tags.split(',').forEach(t => { const s = t.trim(); if (s) tagSet.add(s); });
-    });
-  }
+  const tagCount = buildTagData(tagRows.results || []).count;
 
   const resp = json({
-    postCount: postCount?.cnt ?? 0,
-    catCount: catCount?.cnt ?? 0,
-    tagCount: tagSet.size,
-    latestDate: latestPost?.created_at || ''
+    postCount: postCount.results?.[0]?.cnt ?? 0,
+    catCount: catCount.results?.[0]?.cnt ?? 0,
+    tagCount,
+    latestDate: latestPost.results?.[0]?.created_at || ''
   });
   resp.headers.set('Cache-Control', 'public, max-age=60');
   return resp;
@@ -424,24 +418,7 @@ async function handleGetStats(env) {
  */
 async function handleGetLinks(env) {
   const links = await env.DB.prepare("SELECT value FROM settings WHERE key='site_links'").first();
-  const linksData = links?.value || '';
-  if (!linksData) return json([]);
-
-  const result = linksData.split('\n').reduce((acc, line) => {
-    const idx = line.indexOf(',');
-    if (idx > 0) {
-      const name = line.substring(0, idx).trim();
-      let url = line.substring(idx + 1).trim();
-      // 自动添加 https:// 前缀
-      if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://' + url;
-      }
-      if (name && url) acc.push({ name, url });
-    }
-    return acc;
-  }, []);
-
-  return json(result);
+  return json(parseLinksData(links?.value || ''));
 }
 
 /**
@@ -932,22 +909,7 @@ async function handleGetTags(env) {
       "SELECT tags FROM posts WHERE status='published' AND (password IS NULL OR password='') AND tags IS NOT NULL AND tags != ''"
     ).all();
 
-    const tagMap = {};
-    if (results) {
-      results.forEach(r => {
-        if (r.tags) {
-          r.tags.split(',').forEach(t => {
-            const tag = t.trim();
-            if (tag) tagMap[tag] = (tagMap[tag] || 0) + 1;
-          });
-        }
-      });
-    }
-
-    const tags = Object.entries(tagMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 18)
-      .map(([name, count]) => ({ name, count }));
+    const tags = buildTagData(results || []).tags;
 
     const resp = json(tags);
     resp.headers.set('Cache-Control', 'public, max-age=60');

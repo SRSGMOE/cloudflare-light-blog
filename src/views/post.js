@@ -51,9 +51,7 @@ export function getPostHTML(post, settings, requestUrl) {
     "author": { "@type": "Person", "name": settings.site_author || siteName },
     "mainEntityOfPage": { "@type": "WebPage" }
   })}</script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="${currentTheme.fontUrl}" rel="stylesheet">
+  ${currentTheme.fontUrl ? `<link href="${currentTheme.fontUrl}" rel="stylesheet">` : ''}
   ${iconfontTag}
   <style>
     :root {
@@ -267,17 +265,27 @@ export function getPostHTML(post, settings, requestUrl) {
     // 客户端 HTML 转义（防存储型 XSS）
     var escHtml = function(s) { return String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;'); };
 
-    fetch('/api/stats').then(function(r){return r.json()}).then(function(s){
+    var homeDataPromise = fetch('/api/home-data').then(function(r){
+      if (!r.ok) throw new Error('侧栏数据加载失败');
+      return r.json();
+    }).catch(function(e){
+      console.error(e);
+      return {stats:{},categories:[],links:[],tags:[]};
+    });
+    homeDataPromise.then(function(data){
+      var s = data.stats || {};
       document.getElementById('stat-posts').textContent = s.postCount;
       document.getElementById('stat-cats').textContent = s.catCount;
       document.getElementById('stat-tags').textContent = s.tagCount || 0;
       if (s.latestDate) { var d = new Date(s.latestDate); document.getElementById('site-updated').textContent = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
     });
-    fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
+    homeDataPromise.then(function(data){
+      var cats = data.categories || [];
       var list = document.getElementById('category-list');
       if(cats && cats.length > 0) list.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
     });
-    fetch('/api/links').then(function(r){return r.json()}).then(function(links){
+    homeDataPromise.then(function(data){
+      var links = data.links || [];
       var list = document.getElementById('link-list');
       if(links && links.length > 0) list.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
     });
@@ -285,7 +293,8 @@ export function getPostHTML(post, settings, requestUrl) {
     // 加载标签云（使用服务端聚合接口，避免请求全部文章）
     var tagCloudEl = document.getElementById('tag-cloud-left') || document.getElementById('tag-cloud-right');
     if (tagCloudEl) {
-      fetch('/api/tags').then(function(r){return r.json()}).then(function(tags) {
+      homeDataPromise.then(function(data) {
+        var tags = data.tags || [];
         tags = tags || [];
         if (tags.length > 0) {
           var colors = [
