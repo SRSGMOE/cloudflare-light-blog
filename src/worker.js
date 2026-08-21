@@ -105,7 +105,7 @@ export default {
 
       // 文章详情页
       if (path.startsWith('/post/')) {
-        return handlePostPage(request, env, path, ctx);
+        return handlePostPage(request, env, path, ctx, siteSettings);
       }
 
       // 首页（带缓存）
@@ -338,7 +338,7 @@ async function handleStaticAsset(request, env, path, immutable = path.startsWith
 /**
  * 文章详情页（带缓存）
  */
-async function handlePostPage(request, env, path, ctx) {
+async function handlePostPage(request, env, path, ctx, siteSettings) {
   const match = path.match(/^\/post\/(\d{6})\/(\d+)$/);
   if (!match) {
     return html('无效的文章链接', 404);
@@ -350,22 +350,43 @@ async function handlePostPage(request, env, path, ctx) {
 
   // 如果带密码参数，不缓存
   if (providedPassword) {
-    return renderPostPage(request, env, id, providedPassword, ctx);
+    return renderPostPage(request, env, id, providedPassword, ctx, siteSettings);
   }
 
-  // 文章详情页不缓存（编辑后立即生效）
-  return renderPostPage(request, env, id, null, ctx);
+  // 全站密码开启时不能使用公共缓存，避免缓存认证后的页面。
+  if (siteSettings.site_password) {
+    return renderPostPage(request, env, id, null, ctx, siteSettings);
+  }
+
+  const post = await getPublishedPost(env, id);
+  if (!post) return html('文章不存在', 404);
+
+  // 有文章密码的页面必须按请求验证 Cookie，不能进入公共缓存。
+  if (post.password) {
+    return renderPostPage(request, env, id, null, ctx, siteSettings, post);
+  }
+
+  return withCache(
+    request,
+    () => renderPostPage(request, env, id, null, ctx, siteSettings, post),
+    60,
+    ctx
+  );
+}
+
+async function getPublishedPost(env, id) {
+  return env.DB.prepare(
+    "SELECT * FROM posts WHERE id=? AND status='published'"
+  ).bind(id).first();
 }
 
 /**
  * 渲染文章详情页
  */
-async function renderPostPage(request, env, id, providedPassword, ctx) {
-  const settings = await getSettings(env);
+async function renderPostPage(request, env, id, providedPassword, ctx, settings, loadedPost = null) {
+  settings = settings || await getSettings(env);
 
-  const post = await env.DB.prepare(
-    "SELECT * FROM posts WHERE id=? AND status='published'"
-  ).bind(id).first();
+  const post = loadedPost || await getPublishedPost(env, id);
 
   if (!post) {
     return html('文章不存在', 404);
