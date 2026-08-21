@@ -68,9 +68,9 @@ export function getPostHTML(post, settings, requestUrl) {
       --btn-shadow: ${currentTheme.btnShadow};
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: ${currentTheme.fontFamily}; background: var(--body-bg); color: var(--text-body); }
+    body { font-family: ${currentTheme.fontFamily}; background: var(--body-bg); color: var(--text-body); overflow-x: hidden; }
     button, input, select, textarea { font-family: inherit; }
-    .content-area { width: 792px; flex-shrink: 0; }
+    .content-area { width: 792px; flex-shrink: 0; min-width: 0; }
     header { background: var(--header-bg); color: #fff; padding: 40px 20px; text-align: center; position: relative; overflow: hidden; }
     header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 40px; background: linear-gradient(transparent, rgba(0,0,0,0.05)); }
     header h1 { font-size: 2.5em; font-weight: 800; margin-bottom: 8px; }
@@ -91,17 +91,20 @@ export function getPostHTML(post, settings, requestUrl) {
     .profile-card .category-list a, .profile-card .link-list a { display: block; padding: 8px 12px; margin: 0 0 6px 0; color: var(--text-body); text-decoration: none; background: var(--body-bg); border-radius: 12px; font-size: 0.85em; font-weight: 600; transition: all 0.2s; border: 2px solid transparent; }
     .profile-card .category-list a:hover, .profile-card .link-list a:hover { background: #e6f9f6; border-color: var(--btn-bg); color: var(--btn-shadow); }
     .ad-container img { width: 100%; aspect-ratio: 1/1; object-fit: cover; border-radius: 0; display: block; margin: 0; }
-    .post-article { background: var(--card-bg); padding: 36px; border-radius: 20px; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); border: 2px solid var(--card-border); }
+    .post-article { background: var(--card-bg); padding: 36px; border-radius: 20px; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); border: 2px solid var(--card-border); word-break: break-word; overflow-wrap: break-word; }
     .post-article i.iconfont { font-size: 1.8em; vertical-align: middle; line-height: 1; }
     .post-article svg.icon { width: 1.8em; height: 1.8em; vertical-align: middle; fill: currentColor; overflow: hidden; }
-    .post-article h1 { font-size: 1.8em; margin-bottom: 16px; color: var(--text-primary); font-weight: 800; }
+    .post-article h1 { font-size: 1.8em; margin-bottom: 16px; color: var(--text-primary); font-weight: 800; line-height: 1.3; }
     .post-article p { margin: 0.8em 0; line-height: 1.8; }
-    .post-article img { max-width: 100%; height: auto; margin: 1em 0; border-radius: 12px; cursor: zoom-in; }
+    .post-article img, .post-article iframe, .post-article video { max-width: 100%; height: auto; }
+    .post-article img { margin: 1em 0; border-radius: 12px; cursor: zoom-in; }
     .post-article img:hover { transform: scale(1.02); transition: transform 0.2s; }
+    .post-article table { display: block; width: 100%; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 1em 0; -webkit-overflow-scrolling: touch; }
+    .post-article th, .post-article td { padding: 8px 12px; border: 1px solid var(--card-border); }
+    .post-article th { background: var(--body-bg); font-weight: 700; }
     .icon-img { cursor: default !important; pointer-events: none; }
     .icon-img:hover { transform: none !important; }
-    .post-meta { color: var(--text-secondary); font-size: 0.85em; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid var(--card-border); font-weight: 600; }
-    .post-meta span { margin-right: 16px; }
+    .post-meta { color: var(--text-secondary); font-size: 0.85em; margin-bottom: 20px; padding-bottom: 16px; border-bottom: 2px solid var(--card-border); font-weight: 600; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
     .back-link { display: inline-block; margin-bottom: 20px; padding: 10px 24px; background: var(--btn-bg); color: #fff; text-decoration: none; border-radius: 50px; font-weight: 600; font-size: 0.9em; box-shadow: 0 4px 0 0 var(--btn-shadow); transition: all 0.25s; }
     .back-link:hover { transform: translateY(-1px); box-shadow: 0 5px 0 0 var(--btn-shadow); }
     footer { text-align: center; padding: 30px 20px; color: var(--text-secondary); font-size: 0.85em; }
@@ -133,15 +136,18 @@ export function getPostHTML(post, settings, requestUrl) {
       .mobile-nav-toggle { display: flex; align-items: center; justify-content: center; }
       .mobile-overlay.show { display: block; }
       main { flex-direction: row; padding: 0 12px; gap: 0; margin-top: 12px; position: relative; }
-      .sidebar { width: 260px; position: fixed; top: 0; left: -260px; height: 100vh; z-index: 1002; transition: left 0.3s ease; overflow-y: auto; background: var(--body-bg); padding: 16px; box-shadow: 2px 0 8px rgba(0,0,0,0.1); }
-      .sidebar.open { left: 0; }
+      .sidebar, .sidebar-right { width: 260px; position: fixed; top: 0; left: -260px; height: 100vh; z-index: 1002; transition: left 0.3s ease; overflow-y: auto; background: var(--body-bg); padding: 16px; box-shadow: 2px 0 8px rgba(0,0,0,0.1); display: block; }
+      .sidebar.open, .sidebar-right.open { left: 0; }
       .profile-card { border-radius: 16px; padding: 16px; }
       .profile-card .avatar { width: 120px; height: 120px; }
       .profile-card .name { font-size: 1em; }
-      .post-article { padding: 20px; border-radius: 16px; }
+      .content-area { width: 100%; min-width: 0; flex-shrink: 1; }
+      .post-article { padding: 20px 16px; border-radius: 16px; }
       .post-article h1 { font-size: 1.3em; }
-      .sidebar-right { display: none; }
+      .post-article img:hover { transform: none; }
+      .pin-badge { top: 12px !important; right: 12px !important; width: 28px !important; height: 28px !important; }
       footer { padding: 20px 16px; font-size: 0.8em; }
+      .back-to-top { bottom: 20px; right: 20px; width: 40px; height: 40px; font-size: 18px; }
     }
   </style>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
@@ -189,18 +195,18 @@ export function getPostHTML(post, settings, requestUrl) {
     <div class="content-area">
       <a class="back-link" href="/">← 返回首页</a>
       <article class="post-article" style="position:relative">
-        ${settings.pinned_post_id && String(post.id) === String(settings.pinned_post_id) ? '<img src="/icon/pin-post.png" class="icon-img" style="position:absolute;top:24px;right:24px;width:36px;height:36px">' : ''}
+        ${settings.pinned_post_id && String(post.id) === String(settings.pinned_post_id) ? '<img src="/icon/pin-post.png" class="icon-img pin-badge" style="position:absolute;top:24px;right:24px;width:36px;height:36px">' : ''}
         <h1>${escapeHtml(post.title)}</h1>
         <div class="post-meta">
           <span><img src="/icon/category.png" class="icon-img" style="width:18px;height:18px;vertical-align:middle;margin-right:6px">${escapeHtml(post.category)}</span>
           <span>${(function(d){return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'})(new Date(post.created_at))}</span>
         </div>
-        <div id="post-content" style="line-height:1.8"></div>
+        <div id="post-content" style="line-height:1.8;word-break:break-word;overflow-wrap:break-word"></div>
         ${post.tags ? `<div style="margin-top:24px;padding-top:16px;border-top:2px solid #e8e0cc;display:flex;flex-wrap:wrap;gap:8px">${post.tags.split(',').map(t =>
           `<span style="display:inline-block;padding:5px 14px;background:#e6f9f6;color:${currentTheme.btnShadow};font-size:0.85em;font-weight:700;border:1.5px solid ${currentTheme.btnBg};border-radius:50px">${escapeHtml(t.trim())}</span>`
         ).join('')}</div>` : ''}
         ${settings.copyright_notice ? `
-        <div style="margin-top:24px;padding:20px;background:#f5f2eb;border:1.5px solid #ddd6c6;border-radius:12px;font-size:0.9em;color:${currentTheme.textBody};line-height:1.8">
+        <div style="margin-top:24px;padding:20px;background:#f5f2eb;border:1.5px solid #ddd6c6;border-radius:12px;font-size:0.9em;color:${currentTheme.textBody};line-height:1.8;word-break:break-word;overflow-wrap:break-word">
           ${settings.copyright_notice.replace(/\{\{article_url\}\}/g, escapeHtml(requestUrl || '')).replace(/\{\{publish_date\}\}/g, post.created_at ? (function(d){return d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'})(new Date(post.created_at)) : '')}
         </div>
         ` : ''}
@@ -327,9 +333,12 @@ export function getPostHTML(post, settings, requestUrl) {
     });
 
     function toggleNav() {
-      document.querySelector('.sidebar').classList.toggle('open');
-      document.getElementById('mobileOverlay').classList.toggle('show');
-      document.querySelector('.mobile-nav-toggle').classList.toggle('nav-open');
+      var sidebar = document.querySelector('.sidebar') || document.querySelector('.sidebar-right');
+      if (sidebar) sidebar.classList.toggle('open');
+      var overlay = document.getElementById('mobileOverlay');
+      if (overlay) overlay.classList.toggle('show');
+      var btn = document.querySelector('.mobile-nav-toggle');
+      if (btn) btn.classList.toggle('nav-open');
     }
 
     var lightboxImages = [];
@@ -432,7 +441,16 @@ export function getPostHTML(post, settings, requestUrl) {
     .related-card-title a { color: var(--text-primary); text-decoration: none; }
     .related-card-title a:hover { color: var(--btn-bg); }
     .related-card-meta { font-size: 0.8em; color: var(--text-secondary); }
-    @media (max-width: 768px) { .related-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 768px) {
+      .related-grid { grid-template-columns: 1fr; }
+      pre { padding: 14px 16px; border-radius: 14px; }
+      pre code { font-size: 13px; }
+      .copy-btn { top: 8px; right: 8px; padding: 3px 8px; font-size: 11px; }
+      blockquote { padding: 12px 14px 12px 38px; }
+      blockquote::before { left: 10px; top: 4px; font-size: 36px; }
+      summary { padding: 12px 14px; }
+      details > div, details > p { padding: 12px 14px; }
+    }
   </style>
   <script>
     function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
