@@ -331,7 +331,9 @@ async function handleGetPosts(request, env) {
 async function handleGetCategories(env) {
   const { results } = await env.DB.prepare("SELECT * FROM categories ORDER BY name").all();
   const resp = json(results || []);
-  resp.headers.set('Cache-Control', 'public, max-age=300');
+  // 分类管理必须读取最新结果，避免新增/删除后继续显示旧列表。
+  resp.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+  resp.headers.set('CDN-Cache-Control', 'no-store');
   return resp;
 }
 
@@ -694,21 +696,93 @@ async function handlePermanentDelete(request, env) {
 }
 
 async function handleSaveCategory(request, env) {
-  const body = await request.json();
-  if (body.id) {
-    await env.DB.prepare("UPDATE categories SET name=?, slug=?, description=? WHERE id=?")
-      .bind(body.name, body.slug, body.description || '', body.id).run();
-  } else {
-    await env.DB.prepare("INSERT INTO categories (name, slug, description) VALUES (?, ?, ?)")
-      .bind(body.name, body.slug, body.description || '').run();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ success: false, error: '请求数据格式错误' }, 400);
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json({ success: false, error: '请求数据格式错误' }, 400);
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : '';
+  const slug = typeof body.slug === 'string' ? body.slug.trim() : '';
+  const description = typeof body.description === 'string' ? body.description.trim() : '';
+  if (!name || !slug) {
+    return json({ success: false, error: '分类名称和英文ID不能为空' }, 400);
+  }
+  if (name.length > 100 || slug.length > 100 || /\s/.test(slug)) {
+    return json({ success: false, error: '分类名称或英文ID格式不正确' }, 400);
+  }
+
+  const hasId = body.id !== undefined && body.id !== null && body.id !== '';
+  const id = hasId ? Number(body.id) : null;
+  if (hasId && (!Number.isInteger(id) || id < 1)) {
+    return json({ success: false, error: '分类ID无效' }, 400);
+  }
+
+  try {
+    let current = null;
+    if (hasId) {
+      current = await env.DB.prepare(
+        'SELECT id, name FROM categories WHERE id=?'
+      ).bind(id).first();
+      if (!current) return json({ success: false, error: '分类不存在' }, 404);
+    }
+
+    const conflict = hasId
+      ? await env.DB.prepare(
+        'SELECT id FROM categories WHERE (name=? OR slug=?) AND id != ? LIMIT 1'
+      ).bind(name, slug, id).first()
+      : await env.DB.prepare(
+        'SELECT id FROM categories WHERE name=? OR slug=? LIMIT 1'
+      ).bind(name, slug).first();
+    if (conflict) {
+      return json({ success: false, error: '分类名称或英文ID已存在' }, 409);
+    }
+
+    if (hasId) {
+      const updateCategory = env.DB.prepare(
+        "UPDATE categories SET name=?, slug=?, description=? WHERE id=?"
+      ).bind(name, slug, description, id);
+      if (current.name !== name) {
+        await env.DB.batch([
+          updateCategory,
+          env.DB.prepare('UPDATE posts SET category=? WHERE category=?').bind(name, current.name)
+        ]);
+      } else {
+        await updateCategory.run();
+      }
+    } else {
+      await env.DB.prepare("INSERT INTO categories (name, slug, description) VALUES (?, ?, ?)")
+        .bind(name, slug, description).run();
+    }
+  } catch (e) {
+    if (String(e?.message || '').toLowerCase().includes('unique')) {
+      return json({ success: false, error: '分类名称或英文ID已存在' }, 409);
+    }
+    throw e;
   }
   return json({ success: true });
 }
 
 async function handleDeleteCategory(request, env) {
-  const id = new URL(request.url).searchParams.get('id');
-  if (!id) return errorResponse('缺少 id', 400);
-  await env.DB.prepare("DELETE FROM categories WHERE id=?").bind(id).run();
+  const rawId = new URL(request.url).searchParams.get('id');
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id < 1) {
+    return json({ success: false, error: '分类ID无效' }, 400);
+  }
+
+  const category = await env.DB.prepare(
+    'SELECT id, name FROM categories WHERE id=?'
+  ).bind(id).first();
+  if (!category) return json({ success: false, error: '分类不存在' }, 404);
+
+  await env.DB.batch([
+    env.DB.prepare("UPDATE posts SET category='未分类' WHERE category=?").bind(category.name),
+    env.DB.prepare("DELETE FROM categories WHERE id=?").bind(id)
+  ]);
   return json({ success: true });
 }
 

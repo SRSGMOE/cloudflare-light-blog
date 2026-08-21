@@ -76,7 +76,8 @@ export default {
       if (path.startsWith('/api/')) {
         const cacheTtl = getPublicApiCacheTTL(path, request.method);
         const canUsePublicCache = !siteSettings.site_password;
-        const resp = cacheTtl && canUsePublicCache
+        const hasAuthorization = Boolean(request.headers.get('Authorization'));
+        const resp = cacheTtl && canUsePublicCache && !hasAuthorization
           ? await withCache(
             request,
             () => handleAPI(request, env, path),
@@ -88,7 +89,15 @@ export default {
         const cors = getCorsHeaders(request, siteSettings.allowed_origins || '*');
         Object.entries(cors).forEach(([k, v]) => resp.headers.set(k, v));
         if (resp.ok && request.method !== 'GET' && path !== '/api/login' && !path.endsWith('-auth')) {
-          ctx.waitUntil(purgePublicCache(url.origin));
+          const purgePromise = purgePublicCache(url.origin);
+          if (path === '/api/category') {
+            // 分类管理需要在响应前完成清理，避免下一次读取继续拿到旧首页数据。
+            await purgePromise.catch(error => {
+              console.error('[Cache] 分类缓存清理失败:', error);
+            });
+          } else {
+            ctx.waitUntil(purgePromise);
+          }
         }
         return resp;
       }

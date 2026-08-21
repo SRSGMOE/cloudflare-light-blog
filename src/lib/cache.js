@@ -9,7 +9,6 @@ const PUBLIC_CACHE_PATHS = [
   '/api/posts?page=1&limit=10',
   '/api/posts?page=1&limit=10&v=2',
   '/api/posts?page=1&limit=10&v=3',
-  '/api/categories',
   '/api/settings',
   '/api/stats',
   '/api/links',
@@ -18,7 +17,6 @@ const PUBLIC_CACHE_PATHS = [
 const PUBLIC_API_CACHE_TTLS = {
   '/api/home-data': 60,
   '/api/posts': 60,
-  '/api/categories': 300,
   '/api/settings': 300,
   '/api/stats': 60,
   '/api/links': 300,
