@@ -265,7 +265,7 @@ export function getPostHTML(post, settings, requestUrl) {
     // 客户端 HTML 转义（防存储型 XSS）
     var escHtml = function(s) { return String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;'); };
 
-    var homeDataPromise = fetch('/api/home-data').then(function(r){
+    var homeDataPromise = fetch('/api/home-data?v=2').then(function(r){
       if (!r.ok) throw new Error('侧栏数据加载失败');
       return r.json();
     }).catch(function(e){

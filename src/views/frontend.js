@@ -260,7 +260,7 @@ export function getFrontendHTML(settings, requestUrl) {
     }
 
     // 加载侧边栏数据
-    var homeDataPromise = fetch('/api/home-data').then(function(r){
+    var homeDataPromise = fetch('/api/home-data?v=2').then(function(r){
       if (!r.ok) throw new Error('首页数据加载失败');
       return r.json();
     }).catch(function(e){
@@ -341,7 +341,7 @@ export function getFrontendHTML(settings, requestUrl) {
 
     function loadPosts(page) {
       page = page || 1;
-      var apiUrl = '/api/posts?page=' + page + '&limit=10';
+      var apiUrl = '/api/posts?page=' + page + '&limit=10&v=2';
       if (currentCategory) apiUrl += '&category=' + encodeURIComponent(currentCategory);
 
       fetch(apiUrl).then(function(r){return r.json()}).then(function(res) {

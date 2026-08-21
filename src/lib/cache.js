@@ -3,7 +3,9 @@
 const DEFAULT_TTL = 300; // 5分钟默认缓存
 const PUBLIC_CACHE_PATHS = [
   '/api/home-data',
+  '/api/home-data?v=2',
   '/api/posts?page=1&limit=10',
+  '/api/posts?page=1&limit=10&v=2',
   '/api/categories',
   '/api/settings',
   '/api/stats',
