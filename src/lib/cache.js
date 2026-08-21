@@ -32,7 +32,24 @@ export function getPublicApiCacheTTL(path, method) {
 export async function getCachedResponse(request) {
   const cache = caches.default;
   const cacheKey = new Request(request.url, { method: 'GET' });
-  return cache.match(cacheKey);
+  const cached = await cache.match(cacheKey);
+  if (!cached) return null;
+
+  // Cache API 返回的 Response 头部可能不可变，重新包装后才能补充 CORS 等头部。
+  return new Response(cached.body, {
+    status: cached.status,
+    statusText: cached.statusText,
+    headers: new Headers(cached.headers)
+  });
+}
+
+/**
+ * 删除指定请求的缓存条目
+ */
+export async function deleteCachedResponse(request) {
+  const cache = caches.default;
+  const cacheKey = new Request(request.url, { method: 'GET' });
+  await cache.delete(cacheKey);
 }
 
 /**
@@ -86,8 +103,11 @@ export async function withCache(request, fetchFn, ttl = DEFAULT_TTL, ctx = null,
 
   // 尝试从缓存获取
   const cached = await getCachedResponse(request);
-  if (cached) {
+  if (cached?.ok) {
     return cached;
+  }
+  if (cached) {
+    await deleteCachedResponse(request);
   }
 
   // 执行实际请求
