@@ -3,13 +3,21 @@
 import { escapeHtml, renderAdContent } from '../lib/utils.js';
 import { getTheme } from '../themes/index.js';
 
-export function getFrontendHTML(settings, requestUrl) {
+export function getFrontendHTML(settings, requestUrl, initialData = null) {
   settings = settings || {};
   const siteName = settings.site_name || '我的博客';
   const siteDesc = settings.site_description || '';
   const siteAuthor = settings.site_author || siteName;
   const siteBio = settings.site_bio || '';
   const currentTheme = getTheme(settings.site_theme);
+  const initialHomeData = initialData?.home || null;
+  const initialPostsData = initialData?.posts || null;
+  const serializeForScript = value => JSON.stringify(value == null ? null : value)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
   // 表情包资源：.js 为 Symbol（多色 SVG）模式，.css 为 Font class（单色字体）模式
   const iconfontUrl = settings.iconfont_css ? (settings.iconfont_css.startsWith('//') ? 'https:' + settings.iconfont_css : settings.iconfont_css) : '';
   const iconfontTag = iconfontUrl ? (iconfontUrl.split('?')[0].endsWith('.js') ? `<script src="${iconfontUrl}"></script>` : `<link href="${iconfontUrl}" rel="stylesheet">`) : '';
@@ -235,6 +243,9 @@ export function getFrontendHTML(settings, requestUrl) {
     };
     // 客户端 HTML 转义（防存储型 XSS）
     var escHtml = function(s) { return String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;'); };
+    var initialHomeData = ${serializeForScript(initialHomeData)};
+    var initialPostsData = ${serializeForScript(initialPostsData)};
+    var setText = function(id, value) { var el = document.getElementById(id); if (el) el.textContent = value; };
 
     // 搜索框焦点效果
     var searchInput = document.getElementById('search-input');
@@ -260,7 +271,7 @@ export function getFrontendHTML(settings, requestUrl) {
     }
 
     // 加载侧边栏数据
-    var homeDataPromise = fetch('/api/home-data?v=2').then(function(r){
+    var homeDataPromise = initialHomeData ? Promise.resolve(initialHomeData) : fetch('/api/home-data?v=3').then(function(r){
       if (!r.ok) throw new Error('首页数据加载失败');
       return r.json();
     }).catch(function(e){
@@ -269,9 +280,9 @@ export function getFrontendHTML(settings, requestUrl) {
     });
     homeDataPromise.then(function(data){
       var s = data.stats || {};
-      document.getElementById('stat-posts').textContent = s.postCount;
-      document.getElementById('stat-cats').textContent = s.catCount;
-      document.getElementById('stat-tags').textContent = s.tagCount || 0;
+      setText('stat-posts', s.postCount);
+      setText('stat-cats', s.catCount);
+      setText('stat-tags', s.tagCount || 0);
     });
     homeDataPromise.then(function(data){
       var cats = data.categories || [];
@@ -341,10 +352,13 @@ export function getFrontendHTML(settings, requestUrl) {
 
     function loadPosts(page) {
       page = page || 1;
-      var apiUrl = '/api/posts?page=' + page + '&limit=10&v=2';
+      var apiUrl = '/api/posts?page=' + page + '&limit=10&v=3';
       if (currentCategory) apiUrl += '&category=' + encodeURIComponent(currentCategory);
 
-      fetch(apiUrl).then(function(r){return r.json()}).then(function(res) {
+      var postsRequest = page === 1 && !currentCategory && !currentTag && initialPostsData
+        ? Promise.resolve(initialPostsData)
+        : fetch(apiUrl).then(function(r){return r.json()});
+      postsRequest.then(function(res) {
         var posts = res.data || [];
         var pinned_post_id = res.pinned_post_id || '';
         var pagination = res.pagination || {};
@@ -387,7 +401,7 @@ export function getFrontendHTML(settings, requestUrl) {
         var formatDate = function(d) { var dt = new Date(d); return dt.getFullYear() + String(dt.getMonth()+1).padStart(2,'0'); };
         html += posts.map(function(post) {
           var isPinned = String(post.id) === String(pinned_post_id);
-          var cover = post.cover_image ? '<img src="' + escHtml(post.cover_image) + '" alt="' + escHtml(post.title) + '" loading="lazy">' : '<span style="color:' + themeColors.textSecondary + '">封面</span>';
+          var cover = post.cover_image ? '<img src="' + escHtml(post.cover_image) + '" alt="' + escHtml(post.title) + '" loading="lazy" decoding="async">' : '<span style="color:' + themeColors.textSecondary + '">封面</span>';
           var tags = post.tags ? post.tags.split(',').map(function(t) {
             return '<span style="display:inline-block;padding:3px 10px;background:#e6f9f6;color:' + themeColors.btnShadow + ';font-size:0.72em;font-weight:700;margin-right:6px;border:1.5px solid ' + themeColors.btnBg + ';border-radius:50px">' + escHtml(t.trim()) + '</span>';
           }).join('') : '';

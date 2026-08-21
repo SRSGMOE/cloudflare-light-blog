@@ -18,11 +18,11 @@ export default {
     const path = url.pathname;
 
     // 公共静态资源不需要读取 D1，也不受全站密码页面影响。
-    if (path === '/favicon.ico' || path.startsWith('/icon/')) {
+    if (path === '/favicon.ico' || path.startsWith('/icon/') || path.startsWith('/vendor/')) {
       try {
         return path === '/favicon.ico'
           ? await handleFavicon(request, env)
-          : await handleIcon(request, env, path);
+          : await handleStaticAsset(request, env, path);
       } catch (e) {
         return errorResponse('静态资源加载失败', 500, e);
       }
@@ -75,7 +75,8 @@ export default {
       // API 路由（统一附加 CORS 头）
       if (path.startsWith('/api/')) {
         const cacheTtl = getPublicApiCacheTTL(path, request.method);
-        const resp = cacheTtl
+        const canUsePublicCache = !siteSettings.site_password;
+        const resp = cacheTtl && canUsePublicCache
           ? await withCache(
             request,
             () => handleAPI(request, env, path),
@@ -108,7 +109,7 @@ export default {
       }
 
       // 首页（带缓存）
-      return handleFrontendPage(request, env, ctx);
+      return handleFrontendPage(request, env, ctx, siteSettings);
 
     } catch (e) {
       console.error('[Worker] 未捕获错误:', e.message || 'Error');
@@ -122,11 +123,46 @@ export default {
 /**
  * 首页（带缓存）
  */
-async function handleFrontendPage(request, env, ctx) {
-  return withCache(request, async () => {
-    const settings = await getSettings(env);
-    return html(getFrontendHTML(settings, request.url));
-  }, 300, ctx); // 缓存 5 分钟
+async function handleFrontendPage(request, env, ctx, siteSettings) {
+  const canUsePublicCache = !siteSettings.site_password;
+  const render = async () => {
+    const initialData = new URL(request.url).search
+      ? null
+      : await getInitialFrontendData(request, env);
+    return html(getFrontendHTML(siteSettings, request.url, initialData));
+  };
+
+  return canUsePublicCache
+    ? withCache(request, render, 300, ctx)
+    : render(); // 缓存 5 分钟
+}
+
+/**
+ * 首屏数据在 Worker 端并行生成，随缓存的 HTML 一起发送。
+ */
+async function getInitialFrontendData(request, env) {
+  try {
+    const baseUrl = new URL(request.url);
+    const homeResponse = await handleAPI(
+      new Request(new URL('/api/home-data?v=3', baseUrl)),
+      env,
+      '/api/home-data'
+    );
+    if (!homeResponse.ok) return null;
+    const homeResponseData = await homeResponse.json();
+    const { posts: homePosts, ...home } = homeResponseData;
+    return {
+      home,
+      posts: {
+        data: homePosts || [],
+        pinned_post_id: home.pinned_post_id || '',
+        pagination: home.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 }
+      }
+    };
+  } catch (e) {
+    console.error('[Worker] 首屏数据生成失败:', e.message || 'Error');
+    return null;
+  }
 }
 
 
@@ -271,6 +307,13 @@ async function handleFavicon(request, env) {
  * Icon 图标（从静态资源读取）
  */
 async function handleIcon(request, env, path) {
+  return handleStaticAsset(request, env, path, false);
+}
+
+/**
+ * 公共静态资源（图标和本地化前端依赖）
+ */
+async function handleStaticAsset(request, env, path, immutable = path.startsWith('/vendor/')) {
   if (!env.ASSETS) {
     return new Response('Not Found', { status: 404 });
   }
@@ -281,7 +324,15 @@ async function handleIcon(request, env, path) {
     return new Response('Not Found', { status: 404 });
   }
 
-  return withAssetCache(response);
+  if (!immutable) return withAssetCache(response);
+
+  const headers = new Headers(response.headers);
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 /**

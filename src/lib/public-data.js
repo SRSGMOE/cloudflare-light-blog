@@ -35,17 +35,26 @@ export function buildTagData(results) {
 }
 
 export async function getHomeData(env) {
-  const [postCount, statsTagRows, latestPost, categoryRows, linksRow, tagRows] = await env.DB.batch([
+  const [postCount, statsTagRows, latestPost, categoryRows, linksRow, tagRows, postsRows, pinnedRow] = await env.DB.batch([
     env.DB.prepare("SELECT COUNT(*) as cnt FROM posts WHERE status='published'"),
     env.DB.prepare("SELECT tags FROM posts WHERE status='published' AND tags IS NOT NULL AND tags != ''"),
     env.DB.prepare("SELECT created_at FROM posts WHERE status='published' ORDER BY created_at DESC LIMIT 1"),
     env.DB.prepare("SELECT * FROM categories ORDER BY name"),
     env.DB.prepare("SELECT value FROM settings WHERE key='site_links'"),
-    env.DB.prepare("SELECT tags FROM posts WHERE status='published' AND (password IS NULL OR password='') AND tags IS NOT NULL AND tags != ''")
+    env.DB.prepare("SELECT tags FROM posts WHERE status='published' AND (password IS NULL OR password='') AND tags IS NOT NULL AND tags != ''"),
+    env.DB.prepare("SELECT id, title, slug, excerpt, cover_image, category, tags, view_count, created_at, password FROM posts WHERE status='published' ORDER BY created_at DESC LIMIT 10"),
+    env.DB.prepare("SELECT value FROM settings WHERE key='pinned_post_id'")
   ]);
   const categories = categoryRows.results || [];
   const statsTags = buildTagData(statsTagRows.results || []);
   const tags = buildTagData(tagRows.results || []).tags;
+  const posts = (postsRows.results || []).map(post => {
+    const { password, ...publicPost } = post;
+    if (password) publicPost.excerpt = '';
+    publicPost.has_password = password ? 1 : 0;
+    return publicPost;
+  });
+  const total = postCount.results?.[0]?.cnt ?? 0;
 
   const response = json({
     stats: {
@@ -56,7 +65,10 @@ export async function getHomeData(env) {
     },
     categories,
     links: parseLinksData(linksRow.results?.[0]?.value || ''),
-    tags
+    tags,
+    posts,
+    pinned_post_id: pinnedRow.results?.[0]?.value || '',
+    pagination: { page: 1, limit: 10, total, totalPages: Math.ceil(total / 10) }
   });
   response.headers.set('Cache-Control', 'public, max-age=60');
   return response;

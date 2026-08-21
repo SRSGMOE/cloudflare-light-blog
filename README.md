@@ -159,7 +159,7 @@
 - **数据库**: Cloudflare D1
 - **对象存储**: Cloudflare R2（可选）
 - **前端**: 原生 HTML + Vue 3（后台管理）
-- **Markdown**: marked.js + highlight.js
+- **Markdown**: 本地化 marked.js + 按需加载 highlight.js
 - **部署**: GitHub → Cloudflare Workers 自动部署
 
 ## 项目结构
@@ -440,7 +440,7 @@ git push
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/api/home-data` | 首页侧栏聚合数据（统计、分类、友链、标签） |
+| GET | `/api/home-data` | 首页聚合数据（统计、分类、友链、标签及首页首屏文章） |
 | GET | `/api/posts?page=1&limit=10&category=slug` | 文章列表（分页） |
 | GET | `/api/post/?slug=xxx` | 文章详情 |
 | GET | `/api/categories` | 分类列表 |

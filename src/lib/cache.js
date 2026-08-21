@@ -2,10 +2,13 @@
 
 const DEFAULT_TTL = 300; // 5分钟默认缓存
 const PUBLIC_CACHE_PATHS = [
+  '/',
   '/api/home-data',
   '/api/home-data?v=2',
+  '/api/home-data?v=3',
   '/api/posts?page=1&limit=10',
   '/api/posts?page=1&limit=10&v=2',
+  '/api/posts?page=1&limit=10&v=3',
   '/api/categories',
   '/api/settings',
   '/api/stats',
@@ -59,7 +62,10 @@ export async function cacheResponse(request, response, ttl = DEFAULT_TTL, ctx = 
   const cache = caches.default;
   const cacheKey = new Request(request.url, { method: 'GET' });
   const cacheable = response.clone();
-  cacheable.headers.set('Cache-Control', `public, max-age=${ttl}, stale-while-revalidate=${ttl}`);
+  const cacheControl = `public, max-age=${ttl}, stale-while-revalidate=${ttl}`;
+  cacheable.headers.set('Cache-Control', cacheControl);
+  // 明确 Cloudflare 边缘缓存 TTL，避免面板默认规则覆盖源站缓存策略。
+  cacheable.headers.set('CDN-Cache-Control', cacheControl);
   const putPromise = cache.put(cacheKey, cacheable.clone()).catch(error => {
     console.error('[Cache] 写入失败:', error);
   });

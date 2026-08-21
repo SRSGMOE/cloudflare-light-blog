@@ -10,6 +10,7 @@ export function getPostHTML(post, settings, requestUrl) {
   const siteAuthor = settings.site_author || siteName;
   const postExcerpt = post.excerpt || (post.content ? post.content.substring(0, 160).split('#').join('').split('*').join('').split('\n').join(' ').trim() : '');
   const currentTheme = getTheme(settings.site_theme);
+  const hasCode = /```|`[^`]+`/.test(post.content || '');
   // 表情包资源：.js 为 Symbol（多色 SVG）模式，.css 为 Font class（单色字体）模式
   const iconfontUrl = settings.iconfont_css ? (settings.iconfont_css.startsWith('//') ? 'https:' + settings.iconfont_css : settings.iconfont_css) : '';
   const iconfontTag = iconfontUrl ? (iconfontUrl.split('?')[0].endsWith('.js') ? `<script src="${iconfontUrl}"></script>` : `<link href="${iconfontUrl}" rel="stylesheet">`) : '';
@@ -148,7 +149,6 @@ export function getPostHTML(post, settings, requestUrl) {
       .back-to-top { bottom: 20px; right: 20px; width: 40px; height: 40px; font-size: 18px; }
     }
   </style>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
 </head>
 <body>
   <button class="mobile-nav-toggle" onclick="toggleNav()">☰</button>
@@ -265,7 +265,7 @@ export function getPostHTML(post, settings, requestUrl) {
     // 客户端 HTML 转义（防存储型 XSS）
     var escHtml = function(s) { return String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;'); };
 
-    var homeDataPromise = fetch('/api/home-data?v=2').then(function(r){
+    var homeDataPromise = fetch('/api/home-data?v=3').then(function(r){
       if (!r.ok) throw new Error('侧栏数据加载失败');
       return r.json();
     }).catch(function(e){
@@ -274,10 +274,14 @@ export function getPostHTML(post, settings, requestUrl) {
     });
     homeDataPromise.then(function(data){
       var s = data.stats || {};
-      document.getElementById('stat-posts').textContent = s.postCount;
-      document.getElementById('stat-cats').textContent = s.catCount;
-      document.getElementById('stat-tags').textContent = s.tagCount || 0;
-      if (s.latestDate) { var d = new Date(s.latestDate); document.getElementById('site-updated').textContent = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
+      var statPosts = document.getElementById('stat-posts');
+      var statCats = document.getElementById('stat-cats');
+      var statTags = document.getElementById('stat-tags');
+      if (statPosts) statPosts.textContent = s.postCount;
+      if (statCats) statCats.textContent = s.catCount;
+      if (statTags) statTags.textContent = s.tagCount || 0;
+      var updated = document.getElementById('site-updated');
+      if (s.latestDate && updated) { var d = new Date(s.latestDate); updated.textContent = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
     });
     homeDataPromise.then(function(data){
       var cats = data.categories || [];
@@ -404,8 +408,8 @@ export function getPostHTML(post, settings, requestUrl) {
       else if (e.key === 'ArrowRight') navLightbox(1);
     });
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" crossorigin="anonymous"></script>
+  <script src="/vendor/marked.min.js?v=15.0.12" defer></script>
+  ${hasCode ? '<script src="/vendor/highlight.min.js?v=11.9.0" defer></script>' : ''}
   <style>
     pre { background: #2b2118; border-radius: 20px; padding: 20px 24px; overflow-x: auto; margin: 14px 0; border: 1px solid #3d3028; box-shadow: none; position: relative; }
     .copy-btn { position: absolute; top: 12px; right: 12px; padding: 4px 12px; background: rgba(232,213,188,0.1); border: 1px solid rgba(232,213,188,0.2); border-radius: 6px; color: rgba(232,213,188,0.6); font-size: 12px; cursor: pointer; transition: all 0.2s; z-index: 2; }
@@ -532,7 +536,7 @@ export function getPostHTML(post, settings, requestUrl) {
       }
 
       // 给所有图片添加懒加载（在插入 DOM 前）
-      html = html.split('<img ').join('<img loading="lazy" ');
+      html = html.split('<img ').join('<img loading="lazy" decoding="async" ');
       document.getElementById('post-content').innerHTML = html;
 
       // 为代码块添加复制按钮
@@ -577,7 +581,7 @@ export function getPostHTML(post, settings, requestUrl) {
         var html = '<div class="related-title"><img src="/icon/category.png" style="width:22px;height:22px">相关文章</div>';
         html += '<div class="related-grid">';
         posts.forEach(function(p) {
-          var cover = p.cover_image ? '<img class="related-card-cover" src="' + escHtml(p.cover_image) + '" alt="' + escHtml(p.title) + '">' : '<div class="related-card-cover" style="display:flex;align-items:center;justify-content:center;color:${currentTheme.textSecondary};font-size:2em">📄</div>';
+          var cover = p.cover_image ? '<img class="related-card-cover" src="' + escHtml(p.cover_image) + '" alt="' + escHtml(p.title) + '" loading="lazy" decoding="async">' : '<div class="related-card-cover" style="display:flex;align-items:center;justify-content:center;color:${currentTheme.textSecondary};font-size:2em">📄</div>';
           var date = new Date(p.created_at);
           var dateStr = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
           // 文章路由格式为 /post/YYYYMM/id
