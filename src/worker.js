@@ -85,8 +85,10 @@ export default {
       if (path.startsWith('/api/')) {
         const resp = await handleAPI(request, env, path);
         const cors = getCorsHeaders(request, siteSettings.allowed_origins || '*');
-        Object.entries(cors).forEach(([k, v]) => resp.headers.set(k, v));
-        return resp;
+        // 缓存命中的响应 header 不可变，需重建响应而非直接 set
+        const headers = new Headers(resp.headers);
+        Object.entries(cors).forEach(([k, v]) => headers.set(k, v));
+        return new Response(resp.body, { status: resp.status, statusText: resp.statusText, headers });
       }
 
       // 后台路由
@@ -185,9 +187,8 @@ function showSitePasswordPage(settings) {
   <meta name="robots" content="noindex, nofollow">
   <title>访问验证 - ${escapeHtml(siteName)}</title>
   <link rel="icon" href="/icon/favicon.ico">
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: Nunito, 'Noto Sans SC', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; background: #f8f8f0; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
     .box { background: #f7f3df; padding: 48px; border-radius: 20px; box-shadow: 0 4px 10px rgba(107,92,67,0.42); text-align: center; border: 2px solid #e8e0cc; max-width: 400px; width: 90%; }
     h2 { margin-bottom: 8px; color: #794f27; font-weight: 700; font-size: 1.4em; }
     p { color: #9f927d; margin-bottom: 24px; font-size: 0.9em; }

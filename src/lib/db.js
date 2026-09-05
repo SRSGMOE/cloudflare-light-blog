@@ -68,7 +68,6 @@ export async function initDB(env) {
           category TEXT DEFAULT '未分类',
           tags TEXT DEFAULT '',
           status TEXT DEFAULT 'draft',
-          view_count INTEGER DEFAULT 0,
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           published_at TEXT
@@ -84,6 +83,15 @@ export async function initDB(env) {
       if (!columns.includes('published_at')) {
         await DB.prepare("ALTER TABLE posts ADD COLUMN published_at TEXT").run();
         console.log('[DB] 已添加 published_at 列');
+      }
+      // 移除已废弃的 view_count 列（v1.3.0 起不再统计浏览量；失败可忽略）
+      if (columns.includes('view_count')) {
+        try {
+          await DB.prepare("ALTER TABLE posts DROP COLUMN view_count").run();
+          console.log('[DB] 已移除冗余 view_count 列');
+        } catch (e) {
+          console.warn('[DB] 移除 view_count 列失败（可忽略）:', e.message || 'Error');
+        }
       }
     }
 
@@ -177,8 +185,8 @@ export async function initDB(env) {
     if (postCount && postCount.cnt === 0) {
       const now = new Date().toISOString();
       await DB.prepare(`
-        INSERT INTO posts (title, slug, content, excerpt, cover_image, category, tags, status, view_count, created_at, updated_at, published_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO posts (title, slug, content, excerpt, cover_image, category, tags, status, created_at, updated_at, published_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).bind(
         '欢迎使用 cloudflare-light-blog',
         'welcome',
@@ -188,7 +196,6 @@ export async function initDB(env) {
         '技术教程',
         'Cloudflare,博客',
         'published',
-        0,
         now,
         now,
         now
@@ -215,7 +222,7 @@ export async function initDB(env) {
 // ==================== Settings 内存缓存 ====================
 let settingsCache = null;
 let settingsCacheTime = 0;
-const SETTINGS_CACHE_TTL = 60 * 1000; // 缓存 60 秒
+const SETTINGS_CACHE_TTL = 300 * 1000; // 缓存 5 分钟（保存后主动失效）
 
 /**
  * 获取所有设置（带内存缓存）

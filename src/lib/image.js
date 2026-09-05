@@ -65,35 +65,33 @@ export async function uploadImage(env, data, prefix) {
       return `/images/${filename}`;
     }
 
-    // 无 R2 时回退到 base64（仅小图）
-    return data;
+    // 无 R2：返回空，不再以 base64 存库（避免 D1 膨胀）
+    return '';
   } catch (e) {
     console.error('[Image] 上传失败:', e);
-    return typeof data === 'string' ? data : '';
+    return '';
   }
 }
 
 /**
- * 列出 R2 存储桶中的图片（含文章封面图；分页遍历，最多返回 limit 张）
+ * 列出 R2 存储桶中的图片（含文章封面图；游标分页，返回单页 + 下一页游标）
  */
-export async function listImages(env, limit = 500) {
-  if (!env.R2) return { configured: false, images: [] };
-  const images = [];
-  let cursor;
-  do {
-    const page = await env.R2.list({ limit: Math.min(1000, Math.max(1, limit - images.length)), cursor });
-    for (const obj of (page.objects || [])) {
-      images.push({
-        key: obj.key,
-        url: '/images/' + obj.key,
-        size: obj.size,
-        uploaded: obj.uploaded ? new Date(obj.uploaded).toISOString() : ''
-      });
-    }
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor && images.length < limit);
+export async function listImages(env, limit = 50, cursor) {
+  if (!env.R2) return { configured: false, images: [], cursor: undefined, hasMore: false };
+  const page = await env.R2.list({ limit: Math.min(200, Math.max(1, limit)), cursor });
+  const images = (page.objects || []).map((obj) => ({
+    key: obj.key,
+    url: '/images/' + obj.key,
+    size: obj.size,
+    uploaded: obj.uploaded ? new Date(obj.uploaded).toISOString() : ''
+  }));
   images.sort((a, b) => (b.uploaded || '').localeCompare(a.uploaded || ''));
-  return { configured: true, images };
+  return {
+    configured: true,
+    images,
+    cursor: page.truncated ? page.cursor : undefined,
+    hasMore: !!page.truncated
+  };
 }
 
 /**
@@ -132,9 +130,8 @@ export async function handleUpload(request, env) {
       return { url: `/images/${filename}` };
     }
 
-    // 无 R2 时回退到 base64
-    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-    return { url: `data:${file.type || 'image/jpeg'};base64,${base64}` };
+    // 未配置 R2：直接报错，不再回退 base64（避免大图 base64 塞库导致页面膨胀/崩溃）
+    return { error: '未配置 R2 存储桶，无法上传图片', status: 400 };
   } catch (e) {
     console.error('[Image] 上传处理失败:', e);
     return { error: '上传失败', status: 500 };

@@ -1,11 +1,11 @@
 // ==================== API 处理模块（分页 + 错误处理）====================
 
-import { json, errorResponse, generateSlug, deriveHMACKey, escapeHtml } from './lib/utils.js';
+import { json, errorResponse, generateSlug, generateExcerpt, deriveHMACKey, escapeHtml } from './lib/utils.js';
 import { generateToken, authenticateRequest, hashPassword, verifyPasswordHash } from './lib/auth.js';
 import { getSettings, saveSettings } from './lib/db.js';
 import { handleUpload, listImages } from './lib/image.js';
 import { generateAgentKey } from './lib/agent-auth.js';
-import { purgeCache } from './lib/cache.js';
+import { purgeCache, withCache } from './lib/cache.js';
 
 // ==================== 常量 ====================
 const RATE_MAX_5 = 5;                    // 最大尝试次数
@@ -13,13 +13,38 @@ const RATE_WINDOW_10M = 10 * 60 * 1000;  // 10分钟窗口
 const RATE_WINDOW_1H = 60 * 60 * 1000;   // 1小时窗口
 const COOKIE_MAX_AGE = 86400;            // Cookie 有效期 24小时（秒）
 
+// ADMIN_PASSWORD 哈希缓存（避免每次登录重复 PBKDF2 派生）
+let adminPasswordHashCache = null;
+async function getAdminPasswordHash(env) {
+  if (!adminPasswordHashCache) {
+    adminPasswordHashCache = await hashPassword(env.ADMIN_PASSWORD);
+  }
+  return adminPasswordHashCache;
+}
+
+/**
+ * 写操作后清除前台相关缓存（首页 HTML + 聚合接口 + 各公开接口）
+ */
+async function purgePublicCaches(request) {
+  const origin = new URL(request.url).origin;
+  await Promise.all([
+    purgeCache(origin + '/'),
+    purgeCache(origin + '/api/page-meta'),
+    purgeCache(origin + '/api/posts?page=1&limit=10'),
+    purgeCache(origin + '/api/stats'),
+    purgeCache(origin + '/api/categories'),
+    purgeCache(origin + '/api/links'),
+    purgeCache(origin + '/api/tags')
+  ]);
+}
+
 // ==================== 公共函数 ====================
 
 /**
  * 速率限制：检查并记录（合并为单次操作减少竞态窗口）
  * @returns {boolean} true=允许, false=超限
  */
-async function checkRateLimit(env, key, maxAttempts, windowMs) {
+export async function checkRateLimit(env, key, maxAttempts, windowMs) {
   try {
     const now = Date.now();
     const row = await env.DB.prepare("SELECT value FROM settings WHERE key=?").bind(key).first();
@@ -139,7 +164,7 @@ export async function handleAPI(request, env, path) {
     if (path === '/api/login' && method === 'POST') {
       const body = await request.json();
       if (!env.ADMIN_PASSWORD) {
-        return json({ success: true, token: 'no-auth' });
+        return json({ success: false, error: '未配置管理员密码（ADMIN_PASSWORD），请先在 Cloudflare 后台设置后再登录' }, 503);
       }
 
       // 速率限制（5次/10分钟）
@@ -154,7 +179,7 @@ export async function handleAPI(request, env, path) {
         return json({ success: false, error: '账号错误' }, 401);
       }
 
-      if (body.password && await verifyPasswordHash(body.password, await hashPassword(env.ADMIN_PASSWORD))) {
+      if (body.password && await verifyPasswordHash(body.password, await getAdminPasswordHash(env))) {
         await clearRateLimit(env, rateKey);
         const token = await generateToken(env.ADMIN_PASSWORD);
         return json({ success: true, token });
@@ -183,10 +208,19 @@ export async function handleAPI(request, env, path) {
 
     // ========== 公开 API（不需要认证）==========
     if (path === '/api/posts' && method === 'GET') {
+      // 仅缓存首页列表（第 1 页、无分类/标签筛选），60 秒
+      const url = new URL(request.url);
+      const page = url.searchParams.get('page') || '1';
+      if (page === '1' && !url.searchParams.get('category') && !url.searchParams.get('tag')) {
+        return withCache(request, () => handleGetPosts(request, env), 60, true);
+      }
       return handleGetPosts(request, env);
     }
+    if (path === '/api/page-meta' && method === 'GET') {
+      return withCache(request, () => handleGetPageMeta(env), 60);
+    }
     if (path === '/api/categories' && method === 'GET') {
-      return handleGetCategories(env);
+      return withCache(request, () => handleGetCategories(env), 60);
     }
     if (path === '/api/settings' && method === 'GET') {
       return handleGetSettings(env);
@@ -195,16 +229,16 @@ export async function handleAPI(request, env, path) {
       return handleProxyCss(request);
     }
     if (path === '/api/stats' && method === 'GET') {
-      return handleGetStats(env);
+      return withCache(request, () => handleGetStats(env), 60);
     }
     if (path === '/api/links' && method === 'GET') {
-      return handleGetLinks(env);
+      return withCache(request, () => handleGetLinks(env), 60);
     }
     if (path === '/api/related-posts' && method === 'GET') {
-      return handleGetRelatedPosts(request, env);
+      return withCache(request, () => handleGetRelatedPosts(request, env), 60, true);
     }
     if (path === '/api/tags' && method === 'GET') {
-      return handleGetTags(env);
+      return withCache(request, () => handleGetTags(env), 60);
     }
 
     // ========== 认证检查（以下 API 需要管理员权限）==========
@@ -265,7 +299,7 @@ export async function handleAPI(request, env, path) {
 
     // 图片管理（列表：含文章封面图；删除：按 key 删除存储桶对象）
     if (path === '/api/admin/images' && method === 'GET') {
-      return handleListImagesAdmin(env);
+      return handleListImagesAdmin(request, env);
     }
     if (path === '/api/admin/images' && method === 'DELETE') {
       return handleDeleteImageAdmin(request, env);
@@ -348,13 +382,18 @@ async function handleGetPosts(request, env) {
 }
 
 /**
+ * 获取分类列表（数据层）
+ */
+async function getCategoriesData(env) {
+  const { results } = await env.DB.prepare("SELECT * FROM categories ORDER BY name").all();
+  return results || [];
+}
+
+/**
  * 获取分类列表
  */
 async function handleGetCategories(env) {
-  const { results } = await env.DB.prepare("SELECT * FROM categories ORDER BY name").all();
-  const resp = json(results || []);
-  resp.headers.set('Cache-Control', 'public, max-age=300');
-  return resp;
+  return json(await getCategoriesData(env));
 }
 
 /**
@@ -414,17 +453,15 @@ async function handleProxyCss(request) {
 }
 
 /**
- * 获取统计信息
+ * 获取统计信息（数据层）
  */
-async function handleGetStats(env) {
-  const [postCount, catCount, tagCount, latestPost] = await Promise.all([
+async function getStatsData(env) {
+  const [postCount, catCount, tagCount] = await Promise.all([
     env.DB.prepare("SELECT COUNT(*) as cnt FROM posts WHERE status IN ('published','publish')").first(),
     env.DB.prepare("SELECT COUNT(*) as cnt FROM categories").first(),
-    env.DB.prepare("SELECT tags FROM posts WHERE status IN ('published','publish') AND tags IS NOT NULL AND tags != ''").all(),
-    env.DB.prepare("SELECT created_at FROM posts WHERE status IN ('published','publish') ORDER BY created_at DESC LIMIT 1").first()
+    env.DB.prepare("SELECT tags FROM posts WHERE status IN ('published','publish') AND tags IS NOT NULL AND tags != ''").all()
   ]);
 
-  // 统计去重标签数
   const tagSet = new Set();
   if (tagCount.results) {
     tagCount.results.forEach(r => {
@@ -432,30 +469,33 @@ async function handleGetStats(env) {
     });
   }
 
-  const resp = json({
+  return {
     postCount: postCount?.cnt ?? 0,
     catCount: catCount?.cnt ?? 0,
-    tagCount: tagSet.size,
-    latestDate: latestPost?.created_at || ''
-  });
-  resp.headers.set('Cache-Control', 'public, max-age=60');
-  return resp;
+    tagCount: tagSet.size
+  };
 }
 
 /**
- * 获取友链列表
+ * 获取统计信息
  */
-async function handleGetLinks(env) {
+async function handleGetStats(env) {
+  return json(await getStatsData(env));
+}
+
+/**
+ * 获取友链列表（数据层）
+ */
+async function getLinksData(env) {
   const links = await env.DB.prepare("SELECT value FROM settings WHERE key='site_links'").first();
   const linksData = links?.value || '';
-  if (!linksData) return json([]);
+  if (!linksData) return [];
 
-  const result = linksData.split('\n').reduce((acc, line) => {
+  return linksData.split('\n').reduce((acc, line) => {
     const idx = line.indexOf(',');
     if (idx > 0) {
       const name = line.substring(0, idx).trim();
       let url = line.substring(idx + 1).trim();
-      // 自动添加 https:// 前缀
       if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
         url = 'https://' + url;
       }
@@ -463,8 +503,13 @@ async function handleGetLinks(env) {
     }
     return acc;
   }, []);
+}
 
-  return json(result);
+/**
+ * 获取友链列表
+ */
+async function handleGetLinks(env) {
+  return json(await getLinksData(env));
 }
 
 /**
@@ -575,7 +620,7 @@ async function handleRSS(request, env) {
 
   const items = (results || []).map(p => {
     const link = `${baseUrl}/post/${p.id}`;
-    const desc = p.excerpt || (p.content ? p.content.substring(0, 200).split('#').join('').split('*').join('').split('\n').join(' ').trim() : '');
+    const desc = p.excerpt || generateExcerpt(p.content, 200);
     return `  <item>
     <title>${escapeHtml(p.title)}</title>
     <link>${link}</link>
@@ -639,7 +684,7 @@ async function handleCreatePost(request, env) {
     body.title,
     slug,
     body.content,
-    body.excerpt || (body.content ? body.content.substring(0, 200) : ''),
+    body.excerpt || generateExcerpt(body.content, 200),
     coverImage || '',
     body.category || '未分类',
     body.tags || '',
@@ -650,6 +695,7 @@ async function handleCreatePost(request, env) {
     published_at
   ).run();
 
+  await purgePublicCaches(request);
   return json({ success: true, id: result.meta?.last_row_id });
 }
 
@@ -676,7 +722,7 @@ async function handleUpdatePost(request, env) {
     `).bind(
       body.title,
       body.content,
-      body.excerpt || (body.content ? body.content.substring(0, 200) : ''),
+      body.excerpt || generateExcerpt(body.content, 200),
       coverImage || '',
       body.category || '未分类',
       body.tags || '',
@@ -691,7 +737,7 @@ async function handleUpdatePost(request, env) {
     `).bind(
       body.title,
       body.content,
-      body.excerpt || (body.content ? body.content.substring(0, 200) : ''),
+      body.excerpt || generateExcerpt(body.content, 200),
       coverImage || '',
       body.category || '未分类',
       body.tags || '',
@@ -703,6 +749,7 @@ async function handleUpdatePost(request, env) {
     ).run();
   }
 
+  await purgePublicCaches(request);
   return json({ success: true });
 }
 
@@ -711,6 +758,7 @@ async function handleDeletePost(request, env) {
   if (!id) return errorResponse('缺少 id', 400);
 
   await env.DB.prepare("UPDATE posts SET status='trash' WHERE id=?").bind(id).run();
+  await purgePublicCaches(request);
   return json({ success: true });
 }
 
@@ -725,6 +773,7 @@ async function handleRestorePost(request, env) {
   const body = await request.json();
   if (!body.id) return errorResponse('缺少 id', 400);
   await env.DB.prepare("UPDATE posts SET status='draft' WHERE id=?").bind(body.id).run();
+  await purgePublicCaches(request);
   return json({ success: true });
 }
 
@@ -732,6 +781,7 @@ async function handlePermanentDelete(request, env) {
   const body = await request.json();
   if (!body.id) return errorResponse('缺少 id', 400);
   await env.DB.prepare("DELETE FROM posts WHERE id=? AND status='trash'").bind(body.id).run();
+  await purgePublicCaches(request);
   return json({ success: true });
 }
 
@@ -772,9 +822,8 @@ async function handleSaveSettings(request, env) {
       if (body[key] !== undefined) filtered[key] = body[key];
     }
     await saveSettings(env, filtered);
-    // 清除首页缓存
-    const origin = new URL(request.url).origin;
-    await purgeCache(origin + '/');
+    // 清除前台相关缓存
+    await purgePublicCaches(request);
     return json({ success: true });
   } catch (e) {
     console.error('[API] 保存设置失败:', e);
@@ -811,10 +860,13 @@ async function handleDeleteImage(request, env) {
 /**
  * 图片管理：列出 R2 存储桶中的全部图片（含文章封面图）
  */
-async function handleListImagesAdmin(env) {
+async function handleListImagesAdmin(request, env) {
   try {
-    const { configured, images } = await listImages(env);
-    return json({ configured, images });
+    const url = new URL(request.url);
+    const limit = Math.min(200, Math.max(1, parseInt(url.searchParams.get('limit')) || 50));
+    const cursor = url.searchParams.get('cursor') || undefined;
+    const { configured, images, cursor: nextCursor, hasMore } = await listImages(env, limit, cursor);
+    return json({ configured, images, cursor: nextCursor || '', hasMore });
   } catch (e) {
     console.error('[API] 列出图片失败:', e);
     return json({ configured: false, images: [], error: '列出图片失败' }, 500);
@@ -1023,7 +1075,7 @@ async function handleImportWordPress(request, env) {
           title,
           slug,
           content,
-          excerpt || (content ? content.substring(0, 200) : ''),
+          excerpt || generateExcerpt(content, 200),
           categories[0] || '未分类',
           tags.join(', '),
           status,
@@ -1055,34 +1107,47 @@ async function handleImportWordPress(request, env) {
 /**
  * 获取标签列表（服务端聚合，避免前端请求全部文章）
  */
+async function getTagsData(env) {
+  const { results } = await env.DB.prepare(
+    "SELECT tags FROM posts WHERE status IN ('published','publish') AND (password IS NULL OR password='') AND tags IS NOT NULL AND tags != ''"
+  ).all();
+
+  const tagMap = {};
+  if (results) {
+    results.forEach(r => {
+      if (r.tags) {
+        r.tags.split(',').forEach(t => {
+          const tag = t.trim();
+          if (tag) tagMap[tag] = (tagMap[tag] || 0) + 1;
+        });
+      }
+    });
+  }
+
+  return Object.entries(tagMap)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 18)
+    .map(([name, count]) => ({ name, count }));
+}
+
 async function handleGetTags(env) {
   try {
-    const { results } = await env.DB.prepare(
-      "SELECT tags FROM posts WHERE status IN ('published','publish') AND (password IS NULL OR password='') AND tags IS NOT NULL AND tags != ''"
-    ).all();
-
-    const tagMap = {};
-    if (results) {
-      results.forEach(r => {
-        if (r.tags) {
-          r.tags.split(',').forEach(t => {
-            const tag = t.trim();
-            if (tag) tagMap[tag] = (tagMap[tag] || 0) + 1;
-          });
-        }
-      });
-    }
-
-    const tags = Object.entries(tagMap)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 18)
-      .map(([name, count]) => ({ name, count }));
-
-    const resp = json(tags);
-    resp.headers.set('Cache-Control', 'public, max-age=60');
-    return resp;
+    return json(await getTagsData(env));
   } catch (e) {
     console.error('[API] 获取标签失败:', e);
     return json([]);
   }
+}
+
+/**
+ * 侧边栏聚合接口：一次返回统计 + 分类 + 友链 + 标签
+ */
+async function handleGetPageMeta(env) {
+  const [stats, categories, links, tags] = await Promise.all([
+    getStatsData(env),
+    getCategoriesData(env),
+    getLinksData(env),
+    getTagsData(env)
+  ]);
+  return json({ stats, categories, links, tags });
 }

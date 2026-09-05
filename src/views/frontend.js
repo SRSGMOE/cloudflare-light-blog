@@ -46,9 +46,7 @@ export function getFrontendHTML(settings, requestUrl) {
   <meta name="twitter:title" content="${escapeHtml(siteName)}">
   <meta name="twitter:description" content="${escapeHtml(siteDesc || siteName + ' - 基于 Cloudflare Workers 构建的轻量级博客')}">
   <script type="application/ld+json">${homepageJsonLd}</script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="${currentTheme.fontUrl}" rel="stylesheet">
+  ${currentTheme.fontUrl ? `<link href="${currentTheme.fontUrl}" rel="stylesheet">` : ''}
   ${iconfontTag}
   <style>
     :root {
@@ -264,30 +262,31 @@ export function getFrontendHTML(settings, requestUrl) {
       document.querySelector('.mobile-nav-toggle').classList.toggle('nav-open', open);
     }
 
-    // 加载侧边栏数据
-    fetch('/api/stats').then(function(r){return r.json()}).then(function(s){
-      document.getElementById('stat-posts').textContent = s.postCount;
-      document.getElementById('stat-cats').textContent = s.catCount;
-      document.getElementById('stat-tags').textContent = s.tagCount || 0;
-    });
-    fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
-      var list = document.getElementById('category-list');
-      if(cats && cats.length > 0) {
-        list.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
-      }
-    });
-    fetch('/api/links').then(function(r){return r.json()}).then(function(links){
-      var list = document.getElementById('link-list');
-      if(links && links.length > 0) {
-        list.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
-      }
-    });
-
-    // 加载标签云（使用服务端聚合接口，避免请求全部文章）
+    // 加载侧边栏数据（聚合接口，一次请求；Promise 共享，分类筛选复用）
     var tagCloudEl = document.getElementById('tag-cloud-left') || document.getElementById('tag-cloud-right');
-    if (tagCloudEl) {
-      fetch('/api/tags').then(function(r){return r.json()}).then(function(tags) {
-        tags = tags || [];
+    var pageMetaPromise = fetch('/api/page-meta').then(function(r){return r.json()});
+    pageMetaPromise.then(function(d){
+      // 统计
+      if (d.stats) {
+        document.getElementById('stat-posts').textContent = d.stats.postCount;
+        document.getElementById('stat-cats').textContent = d.stats.catCount;
+        document.getElementById('stat-tags').textContent = d.stats.tagCount || 0;
+      }
+      // 分类
+      var cats = d.categories || [];
+      var catList = document.getElementById('category-list');
+      if (cats.length > 0) {
+        catList.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
+      }
+      // 友链
+      var links = d.links || [];
+      var linkList = document.getElementById('link-list');
+      if (links.length > 0) {
+        linkList.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
+      }
+      // 标签云
+      if (tagCloudEl) {
+        var tags = d.tags || [];
         if (tags.length > 0) {
           var colors = [
             { bg: '#f8a6b2', color: '#fff', border: '#f8a6b2' },  // app-pink
@@ -306,7 +305,6 @@ export function getFrontendHTML(settings, requestUrl) {
           var colorIndex = 0;
           tagCloudEl.innerHTML = tags.map(function(tag) {
             var tagName = tag.name || tag;
-            // 找一个使用次数<2的颜色
             while (colorIndex < shuffled.length * 2) {
               var c = shuffled[colorIndex % shuffled.length];
               var key = c.bg;
@@ -318,15 +316,14 @@ export function getFrontendHTML(settings, requestUrl) {
               }
               colorIndex++;
             }
-            // fallback
             var c = shuffled[0];
             return '<a href="/?tag=' + encodeURIComponent(tagName) + '" class="tag-item" style="display:inline-block;padding:5px 14px;background:' + c.bg + ';color:' + c.color + ';border:1.5px solid ' + c.border + ';border-radius:50px;text-decoration:none;white-space:nowrap;font-size:13px;font-weight:600;transition:all 0.25s ease;cursor:pointer">' + escHtml(tagName) + '</a>';
           }).join('');
         } else {
           tagCloudEl.innerHTML = '<span style="color:' + themeColors.textSecondary + ';font-size:0.85em">暂无标签</span>';
         }
-      });
-    }
+      }
+    });
 
     // 加载文章列表（支持分页）
     var currentPage = parseInt(new URLSearchParams(window.location.search).get('page')) || 1;
@@ -356,8 +353,9 @@ export function getFrontendHTML(settings, requestUrl) {
 
         if (currentCategory) {
           html += '<div style="margin-bottom:16px"><a href="/" style="display:inline-block;padding:8px 20px;background:' + themeColors.btnBg + ';color:#fff;text-decoration:none;border-radius:50px;font-weight:600;font-size:0.9em;box-shadow:0 4px 0 0 ' + themeColors.btnShadow + '">← 返回首页</a> <span id="current-cat" style="color:' + themeColors.textPrimary + ';font-weight:600;margin-left:8px"></span></div>';
-          fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
-            var cat = cats.find(function(c){return c.slug === currentCategory});
+          // 复用 page-meta 已返回的分类数据，避免二次请求
+          pageMetaPromise.then(function(d){
+            var cat = (d.categories || []).find(function(c){return c.slug === currentCategory});
             var el = document.getElementById('current-cat');
             if(el && cat) el.textContent = '当前分类：' + cat.name;
           });
@@ -379,34 +377,11 @@ export function getFrontendHTML(settings, requestUrl) {
 
         html += posts.map(function(post) {
           var isPinned = String(post.id) === String(pinned_post_id);
-          var cover = post.cover_image ? '<img src="' + escHtml(post.cover_image) + '" alt="' + escHtml(post.title) + '" loading="lazy">' : '<span style="color:' + themeColors.textSecondary + '">封面</span>';
+          var cover = post.cover_image ? '<img src="' + escHtml(post.cover_image) + '" alt="' + escHtml(post.title) + '" loading="lazy" width="220" height="160">' : '<span style="color:' + themeColors.textSecondary + '">封面</span>';
           var tags = post.tags ? post.tags.split(',').map(function(t) {
-            return '<span style="display:inline-block;padding:3px 10px;background:#e6f9f6;color:' + themeColors.btnShadow + ';font-size:0.72em;font-weight:700;margin-right:6px;border:1.5px solid ' + themeColors.btnBg + ';border-radius:50px">' + escHtml(t.trim()) + '</span>';
+            return '<span class="post-tag" style="display:inline-block;padding:3px 10px;background:#e6f9f6;color:' + themeColors.btnShadow + ';font-size:0.72em;font-weight:700;margin-right:6px;border:1.5px solid ' + themeColors.btnBg + ';border-radius:50px">' + escHtml(t.trim()) + '</span>';
           }).join('') : '';
-          function stripHtml(str) {
-            if (!str) return '';
-            // 移除HTML标签
-            str = str.replace(/<[^>]*>/g, '');
-            // 移除markdown格式符号
-            str = str.replace(/#{1,6}\\s/g, ''); // 标题
-            str = str.replace(/\\*\\*([^*]+)\\*\\*/g, '$1'); // 粗体
-            str = str.replace(/\\*([^*]+)\\*/g, '$1'); // 斜体
-            str = str.replace(/__([^_]+)__/g, '$1'); // 粗体
-            str = str.replace(/_([^_]+)_/g, '$1'); // 斜体
-            str = str.replace(/~~([^~]+)~~/g, '$1'); // 删除线
-            str = str.replace(/\\\[([^\\\]]+)\\\]\\\([^)]+\\\)/g, '$1'); // 链接
-            str = str.replace(/!\\\[([^\\\]]*)\\\]\\\([^)]+\\\)/g, ''); // 图片
-            str = str.replace(/^[-*+]\\s/gm, ''); // 无序列表
-            str = str.replace(/^\\d+\\.\\s/gm, ''); // 有序列表
-            str = str.replace(/^>\\s/gm, ''); // 引用
-            str = str.replace(/---/g, ''); // 分割线
-            str = str.replace(/\\n+/g, ' '); // 换行转空格
-            str = str.replace(/&[a-z]+;/g, ''); // HTML实体
-            str = str.trim();
-            return str.substring(0, 80);
-          }
-          var rawText = post.excerpt || post.content || '';
-          var excerpt = post.has_password ? '🔒 该文章受到密码保护' : escHtml(stripHtml(rawText)) + (rawText.length > 80 ? '...' : '');
+          var excerpt = post.has_password ? '🔒 该文章受到密码保护' : escHtml(post.excerpt || '');
           var pinBadge = isPinned ? '<img src="/icon/pin-post.png" style="position:absolute;top:12px;right:12px;width:28px;height:28px;z-index:1">' : '';
           return '<article class="post-card" style="position:relative' + (isPinned ? ';border:2px solid #ffd700;box-shadow:0 4px 16px rgba(255,215,0,0.3)' : '') + '">' +
             '<div class="post-cover">' + cover + '</div>' +
@@ -464,7 +439,7 @@ export function getFrontendHTML(settings, requestUrl) {
           if (!keyword) { card.style.display = ''; return; }
           var title = card.querySelector('h2 a');
           var titleText = title ? title.textContent.toLowerCase() : '';
-          var tags = card.querySelectorAll('span[style*="background:#e6f9f6"]');
+          var tags = card.querySelectorAll('.post-tag');
           var tagText = '';
           tags.forEach(function(t) { tagText += t.textContent.toLowerCase() + ' '; });
           var match = titleText.indexOf(keyword) !== -1 || tagText.indexOf(keyword) !== -1;

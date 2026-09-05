@@ -54,6 +54,39 @@ export function generateSlug(title) {
 }
 
 /**
+ * 生成干净的文章摘要（去除 Markdown / HTML 符号，截断到指定长度）
+ * 保存文章时调用，避免前端每次渲染重复解析
+ */
+export function generateExcerpt(content, maxLen = 200) {
+  if (!content) return '';
+  let str = String(content);
+  // 移除代码块（三反引号 / 行内代码）
+  str = str.replace(/```[\s\S]*?```/g, ' ');
+  str = str.replace(/`[^`]*`/g, ' ');
+  // 移除图片 ![](url)
+  str = str.replace(/!\[[^\]]*\]\([^)]*\)/g, ' ');
+  // 链接 [text](url) → text
+  str = str.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // 移除 HTML 标签与实体
+  str = str.replace(/<[^>]*>/g, ' ');
+  str = str.replace(/&[a-z]+;/g, ' ');
+  // 移除标题 / 粗体 / 斜体 / 删除线标记
+  str = str.replace(/^#{1,6}\s+/gm, ' ');
+  str = str.replace(/\*\*([^*]+)\*\*/g, '$1');
+  str = str.replace(/\*([^*]+)\*/g, '$1');
+  str = str.replace(/__([^_]+)__/g, '$1');
+  str = str.replace(/~~([^~]+)~~/g, '$1');
+  // 移除列表 / 引用 / 分割线标记
+  str = str.replace(/^[-*+]\s+/gm, ' ');
+  str = str.replace(/^\d+\.\s+/gm, ' ');
+  str = str.replace(/^>\s+/gm, ' ');
+  str = str.replace(/^-{3,}\s*$/gm, ' ');
+  // 压缩空白并截断
+  str = str.replace(/\s+/g, ' ').trim();
+  return str.substring(0, maxLen);
+}
+
+/**
  * 生成随机文件名
  */
 export function generateRandomFilename() {

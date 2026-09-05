@@ -1,16 +1,20 @@
 // ==================== MCP Server（Streamable HTTP / JSON-RPC 2.0）====================
 
-import { json, generateSlug } from './lib/utils.js';
+import { json, generateSlug, generateExcerpt } from './lib/utils.js';
 import { uploadImage } from './lib/image.js';
 import { getAgentKeyFromRequest, findAgentKey, hasPerm } from './lib/agent-auth.js';
+import { checkRateLimit } from './api.js';
 
 const MCP_VERSION = '2024-11-05';
 const SERVER_NAME = 'cloudflare-light-blog';
-const SERVER_VERSION = '1.3.0';
+const SERVER_VERSION = '1.3.1';
 
 // 只读工具 / 写工具
 const READ_TOOLS = ['list_posts', 'get_post', 'list_categories'];
 const WRITE_TOOLS = ['create_post', 'update_post', 'publish_post', 'delete_post', 'upload_image'];
+
+// 审计日志保留条数（超出后删除最旧记录，避免表无限增长）
+const AGENT_LOGS_MAX = 500;
 
 // 工具定义（JSON Schema，供 MCP 客户端展示参数）
 const TOOLS = [
@@ -174,6 +178,13 @@ async function handleToolCall(id, params, request, env) {
     return rpcErr(id, -32003, '该 Key 没有「' + (required === 'write' ? '写' : '读') + '」权限');
   }
 
+  // 速率限制（折中）：读 300 次/小时，写 60 次/小时，按 key 维度
+  const isWrite = WRITE_TOOLS.includes(name);
+  const rateKey = 'mcp_rate_' + keyRow.id + '_' + (isWrite ? 'write' : 'read');
+  if (!await checkRateLimit(env, rateKey, isWrite ? 60 : 300, 60 * 60 * 1000)) {
+    return rpcErr(id, -32029, '请求过于频繁，请稍后再试');
+  }
+
   try {
     const resultText = await executeTool(name, args, env);
     if (WRITE_TOOLS.includes(name)) {
@@ -221,7 +232,7 @@ async function executeTool(name, args, env) {
         args.title,
         slug,
         args.content,
-        args.excerpt || String(args.content).substring(0, 200),
+        args.excerpt || generateExcerpt(args.content, 200),
         cover,
         args.category || '未分类',
         args.tags || '',
@@ -242,7 +253,7 @@ async function executeTool(name, args, env) {
       const category = args.category !== undefined ? args.category : existing.category;
       const tags = args.tags !== undefined ? args.tags : existing.tags;
       const status = args.status !== undefined ? args.status : existing.status;
-      const excerpt = args.excerpt !== undefined ? args.excerpt : (content ? String(content).substring(0, 200) : existing.excerpt);
+      const excerpt = args.excerpt !== undefined ? args.excerpt : generateExcerpt(content, 200);
       let cover = args.cover_image !== undefined ? args.cover_image : existing.cover_image;
       if (cover && cover.startsWith('data:')) cover = await uploadImage(env, cover, String(args.id));
       const now = new Date().toISOString();
@@ -269,8 +280,12 @@ async function executeTool(name, args, env) {
     }
     case 'upload_image': {
       if (!args.base64) throw new Error('缺少 base64 数据');
+      const raw = args.base64.startsWith('data:') ? args.base64.split(',')[1] : args.base64;
+      const approxBytes = Math.floor(raw.length * 3 / 4);
+      if (approxBytes > 2 * 1024 * 1024) throw new Error('图片大小不能超过 2MB');
       const dataUri = args.base64.startsWith('data:') ? args.base64 : ('data:' + (args.mime || 'image/png') + ';base64,' + args.base64);
       const url = await uploadImage(env, dataUri, 'mcp');
+      if (!url) throw new Error('未配置 R2 存储桶或上传失败');
       return '上传成功：' + url;
     }
     default:
@@ -285,6 +300,10 @@ async function logAgent(env, keyId, tool, args, result) {
   try {
     await env.DB.prepare('INSERT INTO agent_logs (key_id, tool, args, result, created_at) VALUES (?,?,?,?,?)')
       .bind(keyId, tool, String(JSON.stringify(args)).substring(0, 1000), String(result).substring(0, 1000), new Date().toISOString()).run();
+    // 轮转清理：仅保留最近 AGENT_LOGS_MAX 条
+    await env.DB.prepare(
+      'DELETE FROM agent_logs WHERE id NOT IN (SELECT id FROM agent_logs ORDER BY id DESC LIMIT ?)'
+    ).bind(AGENT_LOGS_MAX).run();
   } catch (e) {
     console.error('[MCP] 审计记录失败:', e.message || 'Error');
   }

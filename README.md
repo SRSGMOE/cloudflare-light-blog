@@ -2,11 +2,55 @@
 
 基于 Cloudflare Workers + D1 + R2 构建的轻量级博客系统。
 
-项目预览：https://asiuelkqwe.ai2uerqmnbguy.top
-免费次数有限，希望不要恶意刷预览站点，谢谢~
 ## 更新日志
 
-### v1.3.0 (2026-08-31)
+### v1.3.1 (2026-09-04)
+
+#### 安全加固
+- 密码哈希升级为 **PBKDF2-SHA256 + 随机盐**（1 万次迭代，兼顾 Workers 免费层 CPU 限制；格式 `盐:迭代次数:哈希`，旧版 HMAC 格式自动向后兼容）
+- 未配置 `ADMIN_PASSWORD` 时改为 **fail-closed**，拒绝所有管理操作，避免生产环境误开放
+- MCP 增加**速率限制**（读 300 次/小时、写 60 次/小时，按 key 维度）
+- MCP `upload_image` 增加 **2MB 大小限制**（与后台 `/api/upload` 一致）
+
+#### 性能优化
+- 新增**侧边栏聚合接口** `/api/page-meta`，一次返回统计 + 分类 + 友链 + 标签，首页/文章页由 4 次请求降为 1 次
+- 分类筛选**复用 page-meta 已返回的分类数据**，消除多一次 `/api/categories` 请求
+- 高频只读 API（page-meta / 统计 / 分类 / 友链 / 标签）接入 Workers Cache API 缓存，统一 60 秒
+- 缓存 `/api/posts` 首页列表（第 1 页、无筛选，60 秒）
+- 登录缓存 `ADMIN_PASSWORD` 哈希，每次登录少一次 PBKDF2 派生
+- Settings 缓存由 60 秒延长至 5 分钟
+- 文章页 marked / highlight.js 改为**按需加载**（无代码块时不加载高亮库）
+- **文章摘要改为后端保存时生成**（`generateExcerpt` 去除 Markdown/HTML 符号），前端不再重复解析
+- 相关文章 `/api/related-posts` 接入缓存（60 秒）
+
+#### 界面与 SEO
+- 文章页显示「更新于」最后更新日期（取编辑保存当天，与发布日期不同时显示）
+- 文章页 canonical 改为**绝对 URL**（与 `og:url` 一致）
+- 文章 JSON-LD 补 `image` 字段（相对路径自动转绝对，data URI 自动跳过）
+- 封面图 / 正文图补充宽高尺寸（减少 CLS）
+- 搜索功能标签改用 `post-tag` class 选择，不再依赖内联样式
+- 文章内容中的超链接**默认新窗口打开**（`target="_blank" rel="noopener noreferrer"`）
+
+#### 图片管理
+- 图片列表改为**游标分页**（每页 24 张，底部「加载更多」按钮）
+- 修复未配置 R2 时上传大图崩溃：改为直接报错，不再回退 base64 塞库
+- `uploadImage` 无 R2 时返回空，避免以 base64 存进 D1（封面粘贴与 MCP 上传一致）
+
+#### 数据维护
+- 移除废弃的 `view_count` 列（schema、种子数据，存量库自动迁移删除）
+- MCP 审计日志（`agent_logs`）自动轮转，仅保留最近 500 条
+- **写操作后自动清除前台缓存**（创建/更新/删除/恢复/彻底删除/保存设置后 purge 首页与 API 缓存）
+
+#### 其他
+- 第三方资源全面切换：后台 Vue / axios 由 BootCDN → **cdnjs**；前台 marked / highlight.js 由 jsDelivr → **cdnjs**
+- 全项目字体由 Google Fonts 改为**系统字体栈**（不再加载 Web 字体，国内访问更快更稳）
+
+#### 文档
+- 更新 README（API 文档、后台设置说明、安全说明、项目结构）
+- 修正侧边栏与 `/api/stats` 的过时表述（移除已删除的「最后更新/最新更新日期」）
+
+<details>
+<summary>v1.3.0 (2026-08-31)</summary>
 
 #### 新增功能
 - **MCP Server 接入**：新增 `/mcp` 端点（Streamable HTTP / JSON-RPC 2.0），封装 8 个工具（列出/读取/新建/修改/发布/删除文章、列出分类、上传图片），支持 AstrBot、OpenClaw 等 AI agent 对接
@@ -38,6 +82,8 @@
 #### 其他
 - 数据库新增 `agent_keys`、`agent_logs` 表
 - 新增 `enable_post_toc` 设置项（默认开启）
+
+</details>
 
 <details>
 <summary>v1.2.0 (2026-08-01)</summary>
@@ -128,7 +174,7 @@
 - ✅ 文章列表（分页、分类筛选、搜索标题和标签）
 - ✅ 文章详情页（Markdown 渲染、代码高亮、代码复制按钮、折叠框、引用样式）
 - ✅ 图片灯箱（上一张/下一张导航、键盘操作、图片计数器）
-- ✅ 侧边栏（个人简介、文章/分类/标签统计、建站时间/最后更新、分类列表、自定义友链）
+- ✅ 侧边栏（个人简介、文章/分类/标签统计、分类列表、自定义友链）
 - ✅ 标签云模块（自动聚合标签、随机字体大小、点击筛选文章）
 - ✅ 密码保护文章（HKDF 密钥派生、HMAC 签名、24小时有效期、5次/1小时速率限制）
 - ✅ 全站密码保护（可选、Cookie 24小时有效期、5次/1小时速率限制）
@@ -144,22 +190,27 @@
 - ✅ 文章管理（表格布局、分页、内联新建/编辑、封面图上传+外链、Markdown 编辑器工具栏、标签列展示）
 - ✅ 分类管理（表格布局、增删改、文章数量统计）
 - ✅ 回收站（表格布局、恢复/彻底删除）
-- ✅ 个人设置（头像、简介、建站时间、友链标题/内容、图标配置、模块位置开关）
-- ✅ 网站设置（标题、图标、主题、页脚、自定义JS、全站密码、CORS 来源、功能开关）
+- ✅ 个性设置（个人信息 + 布局模块合并：头像、简介、建站时间、友链、主题风格、模块位置/开关、图标、置顶文章、广告）
+- ✅ 网站设置（标题、图标、主题、页脚、自定义JS、全站密码、CORS 来源、功能开关、MCP 开关）
 - ✅ 主题切换（动森 / 蔚蓝 / 自定义）
 - ✅ 图片上传（支持上传 + 外链，限制 2MB，类型验证）
+- ✅ 图片管理（R2 图片列表、上传、删除、复制链接、尺寸显示、游标分页）
+- ✅ 编辑器插入图片（弹窗选择/上传 R2 图片，一键插入 Markdown）
 - ✅ 图片删除二次确认（可选择是否删除存储桶资源）
 - ✅ Markdown 编辑器（标题、加粗、斜体、链接、图片、代码、列表、引用、分割线、折叠框、表情包）
 - ✅ 页面刷新保持当前导航页
 - ✅ 响应式布局（手机端 / 平板端 / 桌面端）
 - ✅ 文章导入（支持 WordPress XML 格式，批量导入文章、分类、标签）
 - ✅ 网站设置中配置置顶文章编号（置顶文章首位显示，带金色边框和📌标识）
+- ✅ MCP 服务（`/mcp` 端点 + Agent 密钥管理，支持 AstrBot/OpenClaw 等 AI agent 对接）
 
 ### 安全
 - ✅ HMAC-SHA256 管理员认证（48小时过期）
+- ✅ **PBKDF2-SHA256 密码哈希（1 万次迭代 + 随机盐，格式含迭代次数，旧格式自动兼容）**
 - ✅ HKDF 密钥派生（从密码派生 32 字节安全密钥，不直接使用密码原文）
 - ✅ 恒定时间比较（timingSafeEqual，防止时序攻击）
-- ✅ 密码哈希存储（文章密码使用 HMAC-SHA256 哈希，数据库不存明文）
+- ✅ 密码哈希存储（文章密码使用 PBKDF2 加盐哈希，数据库不存明文）
+- ✅ **未配置 ADMIN_PASSWORD 时 fail-closed（拒绝所有管理操作）**
 - ✅ 全站密码保护（HKDF 派生 Cookie 密钥、24小时过期）
 - ✅ 登录速率限制（5次/10分钟）
 - ✅ 密码速率限制（全站密码 + 文章密码，5次/1小时）
@@ -185,8 +236,9 @@
 
 ### 性能
 - ✅ 数据库索引（status、created_at、slug、category）
-- ✅ API 缓存（文章列表 60s、分类 300s、统计 60s、标签 60s、RSS 300s、Sitemap 300s）
-- ✅ Settings 内存缓存（60 秒 TTL，避免每次请求查库）
+- ✅ API 缓存（page-meta / 统计 / 分类 / 友链 / 标签 60s，RSS 300s、Sitemap 300s，Workers Cache API）
+- ✅ Settings 内存缓存（5 分钟 TTL，保存后主动失效）
+- ✅ marked/highlight 按需加载（无代码块时不加载高亮库）
 - ✅ 标签云服务端聚合（`/api/tags`，减少前端请求量）
 - ✅ 前台页面缓存（Cache API，首页 5min）
 - ✅ R2 图片缓存（1年）
@@ -208,12 +260,14 @@
 src/
 ├── worker.js              # 主入口（路由、全站密码验证、robots.txt、favicon.ico）
 ├── api.js                 # API 处理（分页、缓存、输入验证、速率限制、密码认证、Cookie 生成）
+├── mcp.js                 # MCP Server（Streamable HTTP / JSON-RPC，8 个工具 + 鉴权 + 审计）
 ├── lib/
 │   ├── utils.js           # 工具函数（JSON/HTML 响应、CORS 多域名、HTTP 安全头）
 │   ├── db.js              # 数据库初始化（索引、表名白名单、设置读写）
-│   ├── auth.js            # 认证模块（HKDF 密钥派生、HMAC-SHA256、恒定时间比较、密码哈希）
+│   ├── auth.js            # 认证模块（PBKDF2 密码哈希、HKDF 密钥派生、HMAC-SHA256、恒定时间比较）
+│   ├── agent-auth.js      # Agent Key 鉴权（生成、校验、权限判断）
 │   ├── cache.js           # Workers Cache API
-│   └── image.js           # 图片处理（R2 上传、2MB 限制、MIME 验证、文件名校验）
+│   └── image.js           # 图片处理（R2 上传/列表、2MB 限制、MIME 验证、文件名校验）
 ├── themes/                # 主题目录（可自行扩展）
 │   ├── index.js           # 主题注册中心
 │   ├── animal-forest.js   # 动森主题（默认）
@@ -400,6 +454,7 @@ R2 存储桶用于存储文章封面图片等静态资源。
 | `ADMIN_PASSWORD` | **Secret** | 管理员密码 |
 
 > ⚠️ `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 请使用 **Secret** 类型，确保凭据加密存储。
+> ⚠️ **v1.3.1 起必须设置 `ADMIN_PASSWORD`**：未配置时后台所有管理接口将拒绝访问（fail-closed），登录会提示「未配置管理员密码」。
 > CORS 来源、全站密码等配置在后台网站设置中管理，无需在此设置。
 
 > 📌 **凭据重置提示：** 若遗忘管理员账号或密码，可前往 Cloudflare Dashboard → Workers & Pages → 你的 Worker → Settings → Variables and Secrets，重新设置 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 的值，保存后触发重新部署即可生效。无需修改代码或推送仓库。
@@ -430,7 +485,7 @@ git push
 
 ## 后台设置说明
 
-### 个人设置
+### 个性设置（原「个人设置」+「外观布局」合并）
 
 | 设置项 | 说明 | 默认值 |
 |--------|------|--------|
@@ -440,12 +495,17 @@ git push
 | 建站时间 | 侧边栏显示的建站日期 | 2020-02-02 |
 | 友链标题 | 侧边栏友链模块标题 | 友链 |
 | 友链内容 | 名称,地址 每行一个 | 空 |
+| 主题风格 | 动森 / 蔚蓝 / 自定义 | 动森 |
+| 个人简介位置 | 居左 / 居右 | 居左 |
+| 标签云开关 | 控制是否显示标签云模块 | 显示 |
+| 标签云位置 | 居左 / 居右 | 居左 |
+| 文章目录开关 | ≥2 个二级/三级标题时自动生成目录 | 显示 |
 | 分类标题图标 | 替换 `public/icon/category.png` 文件即可更换 | category.png |
 | 友链标题图标 | 替换 `public/icon/friend-links.png` 文件即可更换 | friend-links.png |
+| 置顶文章 | 置顶显示的文章编号，留空表示不置顶 | 无 |
 | 置顶文章图标 | 替换 `public/icon/pin-post.png` 文件即可更换 | pin-post.png |
-| 标签云开关 | 控制是否显示标签云模块 | 显示 |
-| 个人简介位置 | 居左 / 居右 | 居左 |
-| 标签云位置 | 居左 / 居右 | 居左 |
+| 广告位置 | 左侧栏 / 右侧栏 | 左侧栏 |
+| 广告内容 | 支持 HTML / Markdown，图片 1:1 比例 | 空 |
 
 ### 网站设置
 
@@ -454,14 +514,23 @@ git push
 | 网站标题 | 浏览器标题栏和侧边栏 | 我的博客 |
 | 网站副标题 | 首页描述文字 | 空 |
 | 网站图标 | 替换 `public/icon/favicon.ico` 文件即可更换 | favicon.ico |
-| 主题风格 | 动森 / 蔚蓝 / 自定义 | 动森 |
 | 网站页脚 | 支持 HTML | © 2026 我的博客 |
+| 版权说明 | 支持 HTML 与模板变量 | 空 |
+| 表情包引入 | iconfont.cn 的 Font class / Symbol 链接 | 空 |
 | 自定义 JS | 注入到页面的自定义脚本 | 空 |
 | 全站密码 | 留空则不启用，访问任何页面需输入密码 | 空 |
 | CORS 允许来源 | 多域名逗号分隔，* 表示全部 | * |
 | 允许搜索引擎爬取 | 控制 robots.txt 是否允许爬取 | 开启 |
 | 启用压缩 | 控制 Cloudflare 自动压缩 | 开启 |
-| 置顶文章ID | 置顶显示的文章编号，留空表示不置顶 | 空 |
+| MCP 服务开关 | 开启后可用 `/mcp` 并显示密钥设置 | 关闭 |
+
+### MCP 密钥设置（网站设置内，开启 MCP 后显示）
+
+| 设置项 | 说明 |
+|--------|------|
+| MCP 服务地址 | `https://域名/mcp`，可一键复制 |
+| 生成新密钥 | 需勾选读/写权限，最多 2 个，显示为掩码可复制 |
+| 重置 / 吊销 | 均二次确认；重置使旧密钥立即失效 |
 
 ## API 接口
 
@@ -476,7 +545,8 @@ git push
 | GET | `/api/post/?slug=xxx` | 文章详情 |
 | GET | `/api/categories` | 分类列表 |
 | GET | `/api/settings` | 网站设置 |
-| GET | `/api/stats` | 统计信息（文章数、分类数、标签数、最新更新日期） |
+| GET | `/api/page-meta` | 侧边栏聚合数据（统计 + 分类 + 友链 + 标签，一次请求） |
+| GET | `/api/stats` | 统计信息（文章数、分类数、标签数） |
 | GET | `/api/links` | 友链列表 |
 | GET | `/api/tags` | 标签列表（服务端聚合，按数量降序，最多 18 个） |
 | GET | `/api/related-posts?id=x&tags=a,b` | 相关文章（相同标签，随机 4 篇） |
@@ -485,12 +555,13 @@ git push
 | GET | `/rss.xml` | RSS 订阅（最近 20 篇，5 分钟缓存） |
 | POST | `/api/site-auth` | 全站密码认证（返回 HttpOnly Cookie） |
 | POST | `/api/post-auth` | 文章密码认证（返回 HttpOnly Cookie） |
+| POST | `/mcp` | MCP 服务（Streamable HTTP，需 Agent Key + 后台开启） |
 
 ### 管理接口（需要 Bearer Token）
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/login` | 登录获取 Token（5次/10分钟限制） |
+| POST | `/api/login` | 登录获取 Token（5次/10分钟限制；未配置 ADMIN_PASSWORD 时拒绝） |
 | GET | `/api/admin/posts` | 所有文章（含草稿） |
 | POST | `/api/admin/post` | 创建文章 |
 | PUT | `/api/admin/post?id=x` | 更新文章 |
@@ -502,6 +573,12 @@ git push
 | DELETE | `/api/category?id=x` | 删除分类 |
 | POST | `/api/upload` | 上传图片（2MB 限制） |
 | POST | `/api/delete-image` | 删除存储桶图片（需传入图片路径） |
+| GET | `/api/admin/images?limit=50&cursor=xxx` | 图片列表（游标分页） |
+| DELETE | `/api/admin/images?key=xxx` | 删除图片（按文件名） |
+| GET | `/api/admin/agent-keys` | Agent 密钥列表 |
+| POST | `/api/admin/agent-keys` | 生成 Agent 密钥（读/写权限） |
+| POST | `/api/admin/agent-keys/reset` | 重置 Agent 密钥 |
+| DELETE | `/api/admin/agent-keys?id=x` | 吊销 Agent 密钥 |
 | POST | `/api/settings` | 保存设置 |
 | POST | `/api/links` | 保存友链 |
 | POST | `/api/admin/import-wordpress` | 导入 WordPress XML 文件 |

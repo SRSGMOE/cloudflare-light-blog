@@ -10,14 +10,11 @@ export function getAdminHTML() {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>博客管理后台</title>
   <link rel="icon" href="/icon/favicon.ico">
-  <script src="https://cdn.bootcdn.net/ajax/libs/vue/3.4.27/vue.global.prod.min.js" crossorigin="anonymous"><\/script>
-  <script src="https://cdn.bootcdn.net/ajax/libs/axios/1.7.2/axios.min.js" crossorigin="anonymous"><\/script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.4.27/vue.global.prod.min.js" crossorigin="anonymous"><\/script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.7.2/axios.min.js" crossorigin="anonymous"><\/script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Nunito, 'Noto Sans SC', sans-serif; background: var(--body-bg, #f8f8f0); color: var(--text-body, #725d42); }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif; background: var(--body-bg, #f8f8f0); color: var(--text-body, #725d42); }
     .login { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--header-bg, linear-gradient(135deg, #7DC395, #5BAF7A)); }
     .login-box { background: #f7f3df; padding: 40px; border-radius: 20px; width: 100%; max-width: 400px; text-align: center; border: 2px solid #e8e0cc; box-shadow: 0 4px 10px rgba(107, 92, 67, 0.42); }
     .login-box h1 { margin-bottom: 20px; color: #794f27; font-weight: 700; }
@@ -286,11 +283,13 @@ export function getAdminHTML() {
     .form-h { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
     .form-h > label { flex: 0 0 150px; max-width: 150px; text-align: right; margin: 0; padding-top: 12px; font-weight: 600; color: #794f27; word-break: break-word; }
     .form-h > .form-body { flex: 1; min-width: 0; }
+    .form-h.form-h-center { align-items: center; }
+    .form-h.form-h-center > label { padding-top: 0; }
     .personal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
     @media (max-width: 900px) {
       .personal-grid { grid-template-columns: 1fr; }
-      .form-h { flex-direction: column; align-items: stretch; }
-      .form-h > label { flex: none; max-width: none; text-align: left; padding-top: 0; margin-bottom: 6px; }
+      .form-h, .form-h.form-h-center { flex-direction: column; align-items: stretch; }
+      .form-h > label, .form-h.form-h-center > label { flex: none; max-width: none; text-align: left; padding-top: 0; margin-bottom: 6px; }
     }
 </style>
 </head>
@@ -549,7 +548,7 @@ export function getAdminHTML() {
             <h2 style="margin:0">图片管理</h2>
             <button class="btn" @click="$refs.imageFileInput.click()">上传图片</button>
             <input type="file" ref="imageFileInput" @change="handleImageUpload" accept="image/*" style="display:none">
-            <span v-if="imagesLoaded && images.length > 0" style="color:#9f927d;font-size:13px">共 {{images.length}} 张（含文章封面图）</span>
+            <span v-if="imagesLoaded && images.length > 0" style="color:#9f927d;font-size:13px">已加载 {{images.length}} 张（含文章封面图）</span>
           </div>
           <div v-if="imagesLoadError" class="card" style="padding:20px;color:#e05a5a">加载图片失败：{{imagesLoadError}}</div>
           <div v-else-if="imagesLoaded && !r2Configured" class="card" style="padding:24px;color:#725d42;line-height:1.8">
@@ -558,14 +557,19 @@ export function getAdminHTML() {
           </div>
           <div v-else-if="!imagesLoaded" style="color:#9f927d">加载中...</div>
           <div v-else-if="images.length===0" class="card" style="padding:32px;color:#9f927d;text-align:center">暂无图片，点击右上角「上传图片」</div>
-          <div v-else class="image-grid">
-            <div v-for="img in images" :key="img.key" class="image-card">
-              <img :src="img.url" :alt="img.key" loading="lazy" @click="copyImageLink(img)" @load="captureImageSize($event, img.key)" :title="'点击复制链接：' + img.key">
-              <div v-if="imageSizes[img.key]" style="text-align:center;color:#9f927d;font-size:12px;padding:6px 12px 0;white-space:nowrap">{{imageSizes[img.key][0]}} × {{imageSizes[img.key][1]}}</div>
-              <div class="image-card-actions">
-                <button @click="copyImageLink(img)">复制链接</button>
-                <button class="danger" @click="deleteImage(img)">删除</button>
+          <div v-else>
+            <div class="image-grid">
+              <div v-for="img in images" :key="img.key" class="image-card">
+                <img :src="img.url" :alt="img.key" loading="lazy" @click="copyImageLink(img)" @load="captureImageSize($event, img.key)" :title="'点击复制链接：' + img.key">
+                <div v-if="imageSizes[img.key]" style="text-align:center;color:#9f927d;font-size:12px;padding:6px 12px 0;white-space:nowrap">{{imageSizes[img.key][0]}} × {{imageSizes[img.key][1]}}</div>
+                <div class="image-card-actions">
+                  <button @click="copyImageLink(img)">复制链接</button>
+                  <button class="danger" @click="deleteImage(img)">删除</button>
+                </div>
               </div>
+            </div>
+            <div v-if="imagesHasMore" style="text-align:center;margin-top:16px">
+              <button class="btn" @click="loadMoreImages">加载更多</button>
             </div>
           </div>
         </div>
@@ -580,12 +584,12 @@ export function getAdminHTML() {
             <div class="form-h"><label>网站页脚（支持HTML）</label><div class="form-body"><div style="display:flex;gap:8px;margin-bottom:8px"><button @click="applyFooterTemplate" style="padding:6px 12px;background:#19c8b9;color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.85em">应用预设模板</button></div><textarea v-model="settingsForm.site_footer" rows="3"></textarea></div></div>
             <div class="form-h"><label>版权说明（支持HTML）</label><div class="form-body"><div style="display:flex;gap:8px;margin-bottom:8px"><button @click="applyCopyrightTemplate" style="padding:6px 12px;background:#19c8b9;color:white;border:none;border-radius:8px;cursor:pointer;font-size:0.85em">应用预设模板</button></div><textarea v-model="settingsForm.copyright_notice" rows="4" placeholder="例如：© 2026 我的博客. All rights reserved."></textarea></div></div>
             <div class="form-h"><label>表情包引入</label><div class="form-body"><input v-model="settingsForm.iconfont_css" placeholder="Font class(.css) 或 Symbol(.js) 格式，如：//at.alicdn.com/t/c/font_xxx.js"><p style="font-size:12px;color:#9f927d;margin-top:6px">支持 iconfont.cn 的 Font class（单色，颜色跟随文字）与 Symbol（多色，保留图库原始配色，推荐）格式，配置后可在编辑器中插入表情图标</p></div></div>
-            <div class="form-h"><label>自定义JS</label><div class="form-body"><textarea v-model="settingsForm.custom_js" rows="4" placeholder="请输入完整的 script 标签，例如：&lt;script src=&quot;https://cdn.jsdelivr.net/npm/xxx.js&quot;&gt;&lt;/script&gt;"></textarea></div></div>
-            <div class="form-h"><label>全站密码</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><label class="radio-item" style="margin:0"><input type="radio" value="" v-model="settingsForm.sitePasswordType"><span class="radio-custom"></span><span class="radio-label">无</span></label><label class="radio-item" style="margin:0"><input type="radio" value="has" v-model="settingsForm.sitePasswordType"><span class="radio-custom"></span><span class="radio-label">有</span></label><input v-if="settingsForm.sitePasswordType === 'has'" v-model="settingsForm.site_password" type="password" :placeholder="sitePasswordSet ? '已设置，留空保持不变' : '请输入全站密码'" style="flex:1;min-width:160px"></div></div></div>
-            <div class="form-h"><label>允许搜索引擎爬取</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px"><label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.allow_robots"><span class="radio-custom"></span><span class="radio-label">是</span></label><label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.allow_robots"><span class="radio-custom"></span><span class="radio-label">否</span></label></div></div></div>
-            <div class="form-h"><label>启用压缩</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px"><label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.enable_compression"><span class="radio-custom"></span><span class="radio-label">是</span></label><label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.enable_compression"><span class="radio-custom"></span><span class="radio-label">否</span></label></div></div></div>
+            <div class="form-h"><label>自定义JS</label><div class="form-body"><textarea v-model="settingsForm.custom_js" rows="4" placeholder="请输入完整的 script 标签，例如：&lt;script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/xxx/xxx.min.js&quot;&gt;&lt;/script&gt;"></textarea></div></div>
+            <div class="form-h form-h-center"><label>全站密码</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><label class="radio-item" style="margin:0"><input type="radio" value="" v-model="settingsForm.sitePasswordType"><span class="radio-custom"></span><span class="radio-label">无</span></label><label class="radio-item" style="margin:0"><input type="radio" value="has" v-model="settingsForm.sitePasswordType"><span class="radio-custom"></span><span class="radio-label">有</span></label><input v-if="settingsForm.sitePasswordType === 'has'" v-model="settingsForm.site_password" type="password" :placeholder="sitePasswordSet ? '已设置，留空保持不变' : '请输入全站密码'" style="flex:1;min-width:160px"></div></div></div>
+            <div class="form-h form-h-center"><label>允许搜索引擎爬取</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px"><label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.allow_robots"><span class="radio-custom"></span><span class="radio-label">是</span></label><label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.allow_robots"><span class="radio-custom"></span><span class="radio-label">否</span></label></div></div></div>
+            <div class="form-h form-h-center"><label>启用压缩</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px"><label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.enable_compression"><span class="radio-custom"></span><span class="radio-label">是</span></label><label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.enable_compression"><span class="radio-custom"></span><span class="radio-label">否</span></label></div></div></div>
             <div class="form-h"><label>CORS 允许来源</label><div class="form-body"><input v-model="settingsForm.allowed_origins" placeholder="*（多域名用逗号分隔，* 表示全部）"></div></div>
-            <div class="form-h"><label>MCP 服务开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+            <div class="form-h form-h-center"><label>MCP 服务开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
               <label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.enable_mcp"><span class="radio-custom"></span><span class="radio-label">开启</span></label>
               <label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.enable_mcp"><span class="radio-custom"></span><span class="radio-label">关闭</span></label>
             </div></div></div>
@@ -643,24 +647,24 @@ export function getAdminHTML() {
             </div>
             <div class="card">
               <h3 style="color:#794f27;margin-bottom:16px">布局与模块</h3>
-              <div class="form-h"><label>主题风格</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <div class="form-h form-h-center"><label>主题风格</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
                 <label class="radio-item" style="margin:0"><input type="radio" value="animal-forest" v-model="settingsForm.site_theme" @change="applyTheme()"><span class="radio-custom"></span><span class="radio-label">🌲 动森</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="ocean-breeze" v-model="settingsForm.site_theme" @change="applyTheme()"><span class="radio-custom"></span><span class="radio-label">🌊 蔚蓝</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="diy-themes" v-model="settingsForm.site_theme" @change="applyTheme()"><span class="radio-custom"></span><span class="radio-label">🎨 自定义</span></label>
               </div></div></div>
-              <div class="form-h"><label>个人简介位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+              <div class="form-h form-h-center"><label>个人简介位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
                 <label class="radio-item" style="margin:0"><input type="radio" value="left" v-model="settingsForm.profile_position"><span class="radio-custom"></span><span class="radio-label">居左</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="right" v-model="settingsForm.profile_position"><span class="radio-custom"></span><span class="radio-label">居右</span></label>
               </div></div></div>
-              <div class="form-h"><label>标签云开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+              <div class="form-h form-h-center"><label>标签云开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
                 <label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.enable_tag_cloud"><span class="radio-custom"></span><span class="radio-label">显示</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.enable_tag_cloud"><span class="radio-custom"></span><span class="radio-label">不显示</span></label>
               </div></div></div>
-              <div class="form-h"><label>文章目录开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+              <div class="form-h form-h-center"><label>文章目录开关</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
                 <label class="radio-item" style="margin:0"><input type="radio" value="1" v-model="settingsForm.enable_post_toc"><span class="radio-custom"></span><span class="radio-label">显示</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="0" v-model="settingsForm.enable_post_toc"><span class="radio-custom"></span><span class="radio-label">不显示</span></label>
-              </div><p style="font-size:12px;color:#9f927d;margin-top:6px">≥2 个二级/三级标题时自动生成</p></div></div>
-              <div class="form-h"><label>标签云位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+              </div></div></div>
+              <div class="form-h form-h-center"><label>标签云位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
                 <label class="radio-item" style="margin:0"><input type="radio" value="left" v-model="settingsForm.tag_cloud_position"><span class="radio-custom"></span><span class="radio-label">居左</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="right" v-model="settingsForm.tag_cloud_position"><span class="radio-custom"></span><span class="radio-label">居右</span></label>
               </div></div></div>
@@ -668,7 +672,7 @@ export function getAdminHTML() {
                 <div style="width:36px;height:36px;border:2px solid #e8e0cc;border-radius:8px;background:#f0e8d8;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><img src="/icon/category.png" style="width:32px;height:32px;object-fit:cover"></div>
                 <span style="color:#9f927d;font-size:13px">替换 <code style="background:#f0e8d8;padding:2px 6px;border-radius:4px;font-size:12px">public/icon/category.png</code> 文件即可更换</span>
               </div></div></div>
-              <div class="form-h"><label>置顶文章</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+              <div class="form-h form-h-center"><label>置顶文章</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
                 <label class="radio-item" style="margin:0"><input type="radio" value="" v-model="settingsForm.pinnedType"><span class="radio-custom"></span><span class="radio-label">无</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="has" v-model="settingsForm.pinnedType"><span class="radio-custom"></span><span class="radio-label">有</span></label>
                 <input v-if="settingsForm.pinnedType === 'has'" v-model="settingsForm.pinned_post_id" type="number" min="0" step="1" placeholder="输入文章编号" style="flex:1;min-width:120px" @input="settingsForm.pinned_post_id = settingsForm.pinned_post_id.replace(/[^0-9]/g, '')">
@@ -677,7 +681,7 @@ export function getAdminHTML() {
                 <div style="width:36px;height:36px;border:2px solid #e8e0cc;border-radius:8px;background:#f0e8d8;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><img src="/icon/pin-post.png" style="width:32px;height:32px;object-fit:cover"></div>
                 <span style="color:#9f927d;font-size:13px">替换 <code style="background:#f0e8d8;padding:2px 6px;border-radius:4px;font-size:12px">public/icon/pin-post.png</code> 文件即可更换</span>
               </div></div></div>
-              <div class="form-h"><label>广告位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
+              <div class="form-h form-h-center"><label>广告位置</label><div class="form-body"><div style="display:flex;align-items:center;gap:12px">
                 <label class="radio-item" style="margin:0"><input type="radio" value="left" v-model="settingsForm.ad_position"><span class="radio-custom"></span><span class="radio-label">左侧栏</span></label>
                 <label class="radio-item" style="margin:0"><input type="radio" value="right" v-model="settingsForm.ad_position"><span class="radio-custom"></span><span class="radio-label">右侧栏</span></label>
               </div></div></div>
@@ -889,6 +893,8 @@ export function getAdminHTML() {
         const r2Configured = ref(true);
         const imagesLoaded = ref(false);
         const imagesLoadError = ref('');
+        const imagesCursor = ref('');
+        const imagesHasMore = ref(false);
         const showImagePicker = ref(false);
         const selectedImage = ref(null);
         const pickUploading = ref(false);
@@ -905,14 +911,28 @@ export function getAdminHTML() {
 
         const loadImages = async () => {
           try {
-            const r = await api('/api/admin/images');
+            const r = await api('/api/admin/images?limit=24');
             images.value = r.data.images || [];
+            imagesCursor.value = r.data.cursor || '';
+            imagesHasMore.value = !!r.data.hasMore;
             r2Configured.value = r.data.configured !== false;
             imagesLoadError.value = r.data.error || '';
           } catch (e) {
             imagesLoadError.value = (e.response && e.response.data && e.response.data.error) ? e.response.data.error : '加载失败';
           } finally {
             imagesLoaded.value = true;
+          }
+        };
+
+        const loadMoreImages = async () => {
+          if (!imagesHasMore.value || !imagesCursor.value) return;
+          try {
+            const r = await api('/api/admin/images?limit=24&cursor=' + encodeURIComponent(imagesCursor.value));
+            images.value = images.value.concat(r.data.images || []);
+            imagesCursor.value = r.data.cursor || '';
+            imagesHasMore.value = !!r.data.hasMore;
+          } catch (e) {
+            showToast('加载更多失败');
           }
         };
 
@@ -1339,7 +1359,7 @@ export function getAdminHTML() {
 
         watch(currentPage, (v) => { localStorage.setItem('adminPage', v); if (v === 'images' && !imagesLoaded.value) loadImages(); });
         onMounted(() => { check(); document.addEventListener('click', closeAllSelects); });
-        return { logged, username, password, login, logout, posts, editingId, form, coverPreview, toast, openAdd, cancelNewPost, toggleEdit, handleCoverChange, handleCoverDrop, handleDrop, deleteCover, savePost, deletePost, categories, currentPage, postPage, postPageSize, categoryForm, saveCategory, deleteCategory, editCategory, editingCategory, settingsForm, saveSiteSettings, savePersonalSettings, sitePasswordSet, trashPosts, restorePost, permanentDelete, confirmModal, showConfirm, insertMd, applyTheme, applyCopyrightTemplate, applyFooterTemplate, customSelects, toggleSelect, selectOption, getSelectLabel, showImportModal, importFileName, importFileData, importing, importResult, handleImportFile, importPosts, currentPinnedId, setPinnedPost, iconList, emojiLoading, insertEmoji, images, r2Configured, imagesLoaded, imagesLoadError, showImagePicker, selectedImage, pickUploading, locationOrigin, imageSizes, captureImageSize, loadImages, handleImageUpload, openImagePicker, insertPickedImage, copyImageLink, deleteImage, agentKeys, agentKeyForm, mcpAddress, loadAgentKeys, maskKey, copyText, generateAgentKey, resetAgentKey, revokeAgentKey };
+        return { logged, username, password, login, logout, posts, editingId, form, coverPreview, toast, openAdd, cancelNewPost, toggleEdit, handleCoverChange, handleCoverDrop, handleDrop, deleteCover, savePost, deletePost, categories, currentPage, postPage, postPageSize, categoryForm, saveCategory, deleteCategory, editCategory, editingCategory, settingsForm, saveSiteSettings, savePersonalSettings, sitePasswordSet, trashPosts, restorePost, permanentDelete, confirmModal, showConfirm, insertMd, applyTheme, applyCopyrightTemplate, applyFooterTemplate, customSelects, toggleSelect, selectOption, getSelectLabel, showImportModal, importFileName, importFileData, importing, importResult, handleImportFile, importPosts, currentPinnedId, setPinnedPost, iconList, emojiLoading, insertEmoji, images, r2Configured, imagesLoaded, imagesLoadError, imagesCursor, imagesHasMore, showImagePicker, selectedImage, pickUploading, locationOrigin, imageSizes, captureImageSize, loadImages, loadMoreImages, handleImageUpload, openImagePicker, insertPickedImage, copyImageLink, deleteImage, agentKeys, agentKeyForm, mcpAddress, loadAgentKeys, maskKey, copyText, generateAgentKey, resetAgentKey, revokeAgentKey };
       }
     }).mount('#app');
   <\/script>

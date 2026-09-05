@@ -16,6 +16,8 @@ export function getPostHTML(post, settings, requestUrl) {
   // 文章页信息（日期 / 侧边栏配置）
   const cnDate = (ts) => { if (!ts) return ''; const d = new Date(ts); if (isNaN(d.getTime())) return ''; return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日'; };
   const pubDateStr = cnDate(post.published_at || post.created_at);
+  const updDateStr = cnDate(post.updated_at);
+  const showUpd = updDateStr && updDateStr !== pubDateStr;
   const hasSidebarL = settings.profile_position === 'left' || settings.tag_cloud_position === 'left' || settings.ad_position === 'left';
   const hasSidebarR = settings.profile_position === 'right' || settings.tag_cloud_position === 'right' || settings.ad_position === 'right';
   const hasSidebar = hasSidebarL || hasSidebarR;
@@ -33,7 +35,7 @@ export function getPostHTML(post, settings, requestUrl) {
   <!-- Open Graph -->
   <meta property="og:type" content="article">
   <meta property="og:url" content="${new URL('/post/' + post.id, requestUrl).href}">
-  <link rel="canonical" href="/post/${post.id}">
+  <link rel="canonical" href="${new URL('/post/' + post.id, requestUrl).href}">
   <meta property="og:title" content="${escapeHtml(post.title)}">
   <meta property="og:description" content="${escapeHtml(postExcerpt)}">
   <meta property="og:site_name" content="${escapeHtml(siteName)}">
@@ -53,11 +55,10 @@ export function getPostHTML(post, settings, requestUrl) {
     "description": postExcerpt,
     "datePublished": post.published_at || post.created_at,
     "author": { "@type": "Person", "name": settings.site_author || siteName },
-    "mainEntityOfPage": { "@type": "WebPage" }
+    "mainEntityOfPage": { "@type": "WebPage" },
+    ...(post.cover_image && !post.cover_image.startsWith('data:') ? { "image": post.cover_image.startsWith('/') ? new URL(post.cover_image, requestUrl).href : post.cover_image } : {})
   })}</script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="${currentTheme.fontUrl}" rel="stylesheet">
+  ${currentTheme.fontUrl ? `<link href="${currentTheme.fontUrl}" rel="stylesheet">` : ''}
   ${iconfontTag}
   <style>
     :root {
@@ -176,7 +177,7 @@ export function getPostHTML(post, settings, requestUrl) {
       footer { padding: 20px 16px; font-size: 0.8em; }
     }
   </style>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/atom-one-dark.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
 </head>
 <body>
   ${hasSidebar ? `<button class="mobile-nav-toggle" onclick="toggleNav()" aria-label="打开菜单">☰</button>
@@ -226,6 +227,7 @@ export function getPostHTML(post, settings, requestUrl) {
         <div class="post-meta">
           ${post.category ? `<span><img src="/icon/category.png" class="icon-img" style="width:18px;height:18px">${escapeHtml(post.category)}</span>` : ''}
           ${pubDateStr ? `<span>${pubDateStr}</span>` : ''}
+          ${showUpd ? `<span>更新于 ${updDateStr}</span>` : ''}
         </div>
         ${settings.enable_post_toc !== '0' ? '<div id="post-toc" class="post-toc" hidden></div>' : ''}
         <div id="post-content" style="line-height:1.8"></div>
@@ -294,26 +296,26 @@ export function getPostHTML(post, settings, requestUrl) {
     // 客户端 HTML 转义（防存储型 XSS）
     var escHtml = function(s) { return String(s == null ? '' : s).split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split('"').join('&quot;'); };
 
-    fetch('/api/stats').then(function(r){return r.json()}).then(function(s){
-      document.getElementById('stat-posts').textContent = s.postCount;
-      document.getElementById('stat-cats').textContent = s.catCount;
-      document.getElementById('stat-tags').textContent = s.tagCount || 0;
-      if (s.latestDate) { var d = new Date(s.latestDate); document.getElementById('site-updated').textContent = d.getFullYear()+'年'+(d.getMonth()+1)+'月'+d.getDate()+'日'; }
-    });
-    fetch('/api/categories').then(function(r){return r.json()}).then(function(cats){
-      var list = document.getElementById('category-list');
-      if(cats && cats.length > 0) list.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
-    });
-    fetch('/api/links').then(function(r){return r.json()}).then(function(links){
-      var list = document.getElementById('link-list');
-      if(links && links.length > 0) list.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
-    });
-
-    // 加载标签云（使用服务端聚合接口，避免请求全部文章）
+    // 加载侧边栏数据（聚合接口，一次请求）
     var tagCloudEl = document.getElementById('tag-cloud-left') || document.getElementById('tag-cloud-right');
-    if (tagCloudEl) {
-      fetch('/api/tags').then(function(r){return r.json()}).then(function(tags) {
-        tags = tags || [];
+    fetch('/api/page-meta').then(function(r){return r.json()}).then(function(d){
+      // 统计
+      if (d.stats) {
+        document.getElementById('stat-posts').textContent = d.stats.postCount;
+        document.getElementById('stat-cats').textContent = d.stats.catCount;
+        document.getElementById('stat-tags').textContent = d.stats.tagCount || 0;
+      }
+      // 分类
+      var cats = d.categories || [];
+      var catList = document.getElementById('category-list');
+      if (cats.length > 0) catList.innerHTML = '<a href="/">全部</a>' + cats.map(function(c){return '<a href="/?category='+encodeURIComponent(c.slug)+'">'+escHtml(c.name)+'</a>'}).join('');
+      // 友链
+      var links = d.links || [];
+      var linkList = document.getElementById('link-list');
+      if (links.length > 0) linkList.innerHTML = links.map(function(l){return '<a href="'+escHtml(l.url)+'" target="_blank" rel="noopener">'+escHtml(l.name)+'</a>'}).join('');
+      // 标签云
+      if (tagCloudEl) {
+        var tags = d.tags || [];
         if (tags.length > 0) {
           var colors = [
             { bg: '#f8a6b2', color: '#fff', border: '#f8a6b2' },  // app-pink
@@ -326,13 +328,11 @@ export function getPostHTML(post, settings, requestUrl) {
             { bg: '#fc736d', color: '#fff', border: '#fc736d' },  // app-red
             { bg: '#e18c6f', color: '#fff', border: '#e18c6f' }   // warm-peach-pink
           ];
-          // 颜色分配：最多2个标签同色
           var colorCount = {};
           var shuffled = colors.slice().sort(function(){return 0.5 - Math.random()});
           var colorIndex = 0;
           tagCloudEl.innerHTML = tags.map(function(tag) {
             var tagName = tag.name || tag;
-            // 找一个使用次数<2的颜色
             while (colorIndex < shuffled.length * 2) {
               var c = shuffled[colorIndex % shuffled.length];
               var key = c.bg;
@@ -344,15 +344,14 @@ export function getPostHTML(post, settings, requestUrl) {
               }
               colorIndex++;
             }
-            // fallback
             var c = shuffled[0];
             return '<a href="/?tag=' + encodeURIComponent(tagName) + '" class="tag-item" style="display:inline-block;padding:5px 14px;background:' + c.bg + ';color:' + c.color + ';border:1.5px solid ' + c.border + ';border-radius:50px;text-decoration:none;white-space:nowrap;font-size:13px;font-weight:600;transition:all 0.25s ease;cursor:pointer">' + escHtml(tagName) + '</a>';
           }).join('');
         } else {
           tagCloudEl.innerHTML = '<span style="color:' + themeColors.textSecondary + ';font-size:0.85em">暂无标签</span>';
         }
-      });
-    }
+      }
+    });
 
     window.addEventListener('scroll', function() {
       var btn = document.querySelector('.back-to-top');
@@ -421,8 +420,6 @@ export function getPostHTML(post, settings, requestUrl) {
       else if (e.key === 'ArrowRight') navLightbox(1);
     });
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" crossorigin="anonymous"></script>
   <style>
     pre { background: #2b2118; border-radius: 20px; padding: 20px 24px; overflow-x: auto; margin: 14px 0; border: 1px solid #3d3028; box-shadow: none; position: relative; }
     .copy-btn { position: absolute; top: 12px; right: 12px; padding: 4px 12px; background: rgba(232,213,188,0.1); border: 1px solid rgba(232,213,188,0.2); border-radius: 6px; color: rgba(232,213,188,0.6); font-size: 12px; cursor: pointer; transition: all 0.2s; z-index: 2; }
@@ -471,7 +468,17 @@ export function getPostHTML(post, settings, requestUrl) {
   </style>
   <script>
     function escapeHtml(str) { return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;'); }
-    document.addEventListener('DOMContentLoaded', function() {
+    function loadScript(src) {
+      return new Promise(function(resolve, reject) {
+        var s = document.createElement('script');
+        s.src = src;
+        s.crossOrigin = 'anonymous';
+        s.onload = resolve;
+        s.onerror = function() { reject(new Error('加载失败: ' + src)); };
+        document.head.appendChild(s);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', async function() {
       var raw = ${JSON.stringify((post.content || '').split('</script>').join('<\\/script>'))};
       var fence = String.fromCharCode(96)+String.fromCharCode(96)+String.fromCharCode(96);
       var tick = String.fromCharCode(96);
@@ -517,11 +524,19 @@ export function getPostHTML(post, settings, requestUrl) {
         }
       }
 
+      // 按需加载：marked 必需；仅当存在代码块时才加载 highlight
+      try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/marked/18.0.11/lib/marked.umd.min.js'); } catch (e) {}
+      if (codeBlocks.length > 0) {
+        try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js'); } catch (e) {}
+      }
+
       // 第二步：用 marked 解析（代码块已被占位符替换，不会有 HTML 问题）
       var html;
       if (typeof marked !== 'undefined' && marked.parse) {
         marked.setOptions({ breaks: true, gfm: true, headerIds: false, mangle: false });
         html = marked.parse(content);
+        // 文章内容中的超链接默认新窗口打开
+        html = html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ');
       } else {
         html = '<p>' + content.split('&').join('&amp;').split('<').join('&lt;').split('>').join('&gt;').split(String.fromCharCode(10)).join('<br>') + '</p>';
       }
@@ -564,8 +579,14 @@ export function getPostHTML(post, settings, requestUrl) {
       }
 
       initLightbox();
-      // 图片懒加载
-      document.querySelectorAll('.post-article img').forEach(function(img) { img.setAttribute('loading', 'lazy'); });
+      // 图片懒加载 + 加载后回填宽高（稳定布局、减少 CLS）
+      document.querySelectorAll('.post-article img').forEach(function(img) {
+        img.setAttribute('loading', 'lazy');
+        var applySize = function() {
+          if (img.naturalWidth) { img.setAttribute('width', img.naturalWidth); img.setAttribute('height', img.naturalHeight); }
+        };
+        if (img.complete) applySize(); else img.addEventListener('load', applySize);
+      });
 
       // 生成文章目录（h2/h3 自动生成锚点）
       (function() {
@@ -611,7 +632,7 @@ export function getPostHTML(post, settings, requestUrl) {
         var html = '<div class="related-title"><img src="/icon/category.png" style="width:22px;height:22px">相关文章</div>';
         html += '<div class="related-grid">';
         posts.forEach(function(p) {
-          var cover = p.cover_image ? '<img class="related-card-cover" src="' + escHtml(p.cover_image) + '" alt="' + escHtml(p.title) + '">' : '<div class="related-card-cover" style="display:flex;align-items:center;justify-content:center;color:${currentTheme.textSecondary};font-size:2em">📄</div>';
+          var cover = p.cover_image ? '<img class="related-card-cover" src="' + escHtml(p.cover_image) + '" alt="' + escHtml(p.title) + '" loading="lazy" width="300" height="140">' : '<div class="related-card-cover" style="display:flex;align-items:center;justify-content:center;color:${currentTheme.textSecondary};font-size:2em">📄</div>';
           var date = new Date(p.published_at || p.created_at);
           var dateStr = date.getFullYear() + '-' + String(date.getMonth()+1).padStart(2,'0') + '-' + String(date.getDate()).padStart(2,'0');
           html += '<div class="related-card">' + cover + '<div class="related-card-content"><div class="related-card-title"><a href="/post/' + p.id + '">' + escHtml(p.title) + '</a></div><div class="related-card-meta">' + escHtml(p.category) + ' · ' + dateStr + '</div></div></div>';

@@ -33,15 +33,15 @@ export async function purgeCache(url) {
 /**
  * 带缓存的响应包装器
  */
-export async function withCache(request, fetchFn, ttl = DEFAULT_TTL) {
+export async function withCache(request, fetchFn, ttl = DEFAULT_TTL, allowQuery = false) {
   // 只缓存 GET 请求
   if (request.method !== 'GET') {
     return fetchFn();
   }
 
-  // 不缓存带查询参数的页面（标签、分类、分页等）
+  // 默认不缓存带查询参数的页面（标签、分类、分页等）；allowQuery=true 时例外
   const url = new URL(request.url);
-  if (url.search) {
+  if (url.search && !allowQuery) {
     return fetchFn();
   }
 
